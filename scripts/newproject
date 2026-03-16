@@ -67,6 +67,9 @@ fi
 if [[ "$PROJECT_NAME" =~ [/\\] ]]; then
   die "Project name cannot contain slashes."
 fi
+if [[ "$PROJECT_NAME" == *" "* ]]; then
+  die "Project name cannot contain spaces. Use hyphens instead: $(echo "$PROJECT_NAME" | tr ' ' '-')"
+fi
 if [[ "$PROJECT_NAME" =~ ^[[:space:]] || "$PROJECT_NAME" =~ [[:space:]]$ ]]; then
   die "Project name cannot start or end with spaces. Use hyphens instead."
 fi
@@ -237,6 +240,63 @@ if [[ "$DO_GITHUB" == false && -d "$TEMPLATES_DIR" ]]; then
       sed -i "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/scripts/01_setup_infrastructure.py"
     fi
     ok "scripts/01_setup_infrastructure.py stamped"
+  fi
+
+  # Copy and stamp README.md
+  if [[ -f "$TEMPLATES_DIR/README.md" ]]; then
+    cp "$TEMPLATES_DIR/README.md" "$PROJECT_DIR/README.md"
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' "s/PROJECT_NAME/$PROJECT_NAME/g" "$PROJECT_DIR/README.md"
+      sed -i '' "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/README.md"
+    else
+      sed -i "s/PROJECT_NAME/$PROJECT_NAME/g" "$PROJECT_DIR/README.md"
+      sed -i "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/README.md"
+    fi
+    ok "README.md stamped (project: $PROJECT_NAME, catalog: $CATALOG)"
+  fi
+
+  # Merge permissions into .claude/settings.json
+  if [[ -f "$PROJECT_DIR/.claude/settings.json" && -f "$TEMPLATES_DIR/settings.json" ]]; then
+    python3 -c "
+import json
+with open('$PROJECT_DIR/.claude/settings.json') as f:
+    config = json.load(f)
+with open('$TEMPLATES_DIR/settings.json') as f:
+    perms = json.load(f)
+config['permissions'] = perms.get('permissions', {})
+with open('$PROJECT_DIR/.claude/settings.json', 'w') as f:
+    json.dump(config, f, indent=2)
+    f.write('\n')
+" 2>/dev/null
+    ok ".claude/settings.json → merged permissions"
+  elif [[ -f "$TEMPLATES_DIR/settings.json" ]]; then
+    mkdir -p "$PROJECT_DIR/.claude"
+    cp "$TEMPLATES_DIR/settings.json" "$PROJECT_DIR/.claude/settings.json"
+    ok ".claude/settings.json → created with permissions"
+  fi
+
+  # Patch .mcp.json — remove defer_loading, ensure correct profile
+  if [[ -f "$PROJECT_DIR/.mcp.json" ]]; then
+    python3 -c "
+import json
+with open('$PROJECT_DIR/.mcp.json') as f:
+    config = json.load(f)
+changed = False
+for name, server in config.get('mcpServers', {}).items():
+    if 'defer_loading' in server:
+        del server['defer_loading']
+        changed = True
+    env = server.get('env', {})
+    if env.get('DATABRICKS_CONFIG_PROFILE') != '$PROFILE':
+        env['DATABRICKS_CONFIG_PROFILE'] = '$PROFILE'
+        server['env'] = env
+        changed = True
+if changed:
+    with open('$PROJECT_DIR/.mcp.json', 'w') as f:
+        json.dump(config, f, indent=2)
+        f.write('\n')
+" 2>/dev/null
+    ok ".mcp.json → removed defer_loading, profile: $PROFILE"
   fi
 
   ok "Templates copied (local-only mode)"

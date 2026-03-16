@@ -71,11 +71,8 @@ case "$action" in
       echo "  Run: dbx-profile list" >&2
       exit 1
     fi
-    export DATABRICKS_CONFIG_PROFILE="$target"
-    unset DATABRICKS_HOST DATABRICKS_TOKEN 2>/dev/null || true
-    echo "  ✓ Switched to profile: $target"
-    echo "  Note: export takes effect in this shell only."
-    echo "  To persist: export DATABRICKS_CONFIG_PROFILE=$target"
+    echo "  ✓ To switch profile, run:"
+    echo "    export DATABRICKS_CONFIG_PROFILE=$target"
     ;;
 
   add|new)
@@ -91,7 +88,8 @@ case "$action" in
     fi
     read -rp "  Workspace URL (https://...): " host
     [[ -z "$host" ]] && { echo "  ✗ URL required" >&2; exit 1; }
-    read -rp "  Token (dapi...): " token
+    read -rsp "  Token (dapi...): " token
+    echo
     [[ -z "$token" ]] && { echo "  ✗ Token required" >&2; exit 1; }
 
     echo "" >> "$cfg"
@@ -106,7 +104,7 @@ case "$action" in
   test|check)
     profile="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
     echo "  Testing profile: $profile"
-    if databricks auth describe --profile "$profile" 2>&1; then
+    if databricks auth status --profile "$profile" 2>&1; then
       echo ""
       echo "  ✓ Connection OK"
     else

@@ -9,9 +9,12 @@ The launchpad layer sits on top of the [Databricks AI Dev Kit](https://github.co
 
 | Tool | Install |
 |------|---------|
+| Node.js / npm | [https://nodejs.org/](https://nodejs.org/) (required to install Claude Code) |
 | Claude Code | `npm install -g @anthropic-ai/claude-code` |
-| Databricks CLI | `brew install databricks` |
-| GitHub CLI | `brew install gh` (optional, required for `/plan` and `/ship`) |
+| Databricks CLI | [https://docs.databricks.com/dev-tools/cli/install.html](https://docs.databricks.com/dev-tools/cli/install.html) |
+| GitHub CLI | [https://cli.github.com/](https://cli.github.com/) (optional, required for `/plan` and `/ship`) |
+| python3 | [https://www.python.org/downloads/](https://www.python.org/downloads/) (required for project scripts) |
+| jq | [https://jqlang.github.io/jq/download/](https://jqlang.github.io/jq/download/) (required for statusline and hooks) |
 | AI Dev Kit | `bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)` |
 | uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (recommended) |
 

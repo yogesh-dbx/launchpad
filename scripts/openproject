@@ -66,7 +66,8 @@ launch() {
       &
     echo -e "${GREEN}✓${RESET} Opening ${CYAN}$name${RESET} in Ghostty..."
   else
-    echo -e "  Run: ${CYAN}cd $dir && claude${RESET}"
+    echo -e "${GREEN}✓${RESET} Opening ${CYAN}$name${RESET}..."
+    cd "$dir" && exec "$CLAUDE_BIN"
   fi
 }
 
@@ -84,6 +85,7 @@ if [[ -n "${1:-}" ]]; then
 fi
 
 # ── Interactive picker (no argument) ──────────────────────────────────────────
+[[ -d "$DEV_DIR" ]] || die "Projects directory not found: $DEV_DIR"
 projects=()
 while IFS= read -r d; do
   projects+=("$DEV_DIR/$d")

@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Glob, Grep, Task
+allowed-tools: Read, Glob, Grep, Agent
 description: "Analyze code for tech debt and improvement opportunities"
 argument-hint: "Optional: specific area to analyze"
 ---

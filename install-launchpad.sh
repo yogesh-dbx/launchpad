@@ -62,28 +62,42 @@ check_prerequisites() {
   local failed=0
 
   if ! command -v claude &>/dev/null; then
-    error "Claude Code not installed. Install: npm install -g @anthropic-ai/claude-code"
+    warn "Claude Code not installed. Install: npm install -g @anthropic-ai/claude-code"
+    (( failed++ ))
   fi
 
   if ! command -v databricks &>/dev/null; then
-    error "Databricks CLI not installed. Install: https://docs.databricks.com/dev-tools/cli/install.html"
+    warn "Databricks CLI not installed. Install: https://docs.databricks.com/dev-tools/cli/install.html"
+    (( failed++ ))
   fi
 
   if ! command -v gh &>/dev/null; then
     warn "GitHub CLI not installed. Some features (newproject, /plan, /ship) require it."
   fi
 
+  if ! command -v python3 &>/dev/null; then
+    warn "python3 not installed. Required for project initialization."
+    (( failed++ ))
+  fi
+
   if ! command -v jq &>/dev/null; then
-    warn "jq not installed. Statusline requires it. Install: https://jqlang.github.io/jq/download/"
+    warn "jq not installed. Required for statusline and hooks. Install: https://jqlang.github.io/jq/download/"
+    (( failed++ ))
   fi
 
   if [[ ! -d "$HOME/.ai-dev-kit" ]]; then
-    error "AI Dev Kit not installed. Run: bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)"
+    warn "AI Dev Kit not installed. Run: bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)"
+    (( failed++ ))
   fi
 
   # Verify launchpad source files exist
   if [[ ! -d "$LAUNCHPAD_DIR/global" ]]; then
-    error "Launchpad source files not found. Expected directory: $LAUNCHPAD_DIR/global"
+    warn "Launchpad source files not found. Expected directory: $LAUNCHPAD_DIR/global"
+    (( failed++ ))
+  fi
+
+  if (( failed > 0 )); then
+    error "Missing $failed prerequisite(s). Install them and re-run."
   fi
 
   success "Prerequisites check passed"
@@ -118,12 +132,12 @@ load_or_prompt_config() {
   read -rp "Projects directory [$HOME/dev]: " DEV_DIR
   DEV_DIR="${DEV_DIR:-$HOME/dev}"
 
-  # Persist config
+  # Persist config (escape double quotes in values)
   mkdir -p "$CONFIG_DIR"
   cat > "$CONFIG_FILE" <<EOF
-USER_NAME="$USER_NAME"
-USER_ROLE="$USER_ROLE"
-DEV_DIR="$DEV_DIR"
+USER_NAME="${USER_NAME//\"/\\\"}"
+USER_ROLE="${USER_ROLE//\"/\\\"}"
+DEV_DIR="${DEV_DIR//\"/\\\"}"
 EOF
   success "Config saved to $CONFIG_FILE"
 }
@@ -269,7 +283,7 @@ print_summary() {
   echo "  ~/.claude/agents/                Databricks executor subagent"
   echo "  ~/.claude/hooks/                 Context monitor, issue injection, TODO tracking"
   echo "  ~/.claude/statusline.sh          Status bar (model, branch, cost, context)"
-  echo "  ~/.local/bin/                    newproject, updateaidevkit, and 4 more"
+  echo "  ~/.local/bin/                    newproject, openproject, gh-project-init, updateaidevkit, dbx-workspace-info, dbx-profile"
   echo "  ~/.local/share/project-templates/  Project templates"
   echo ""
   echo "Next steps:"

@@ -117,6 +117,11 @@ else
   user_name="${USER_NAME:-$(git config --global user.name 2>/dev/null || echo "Developer")}"
   user_role="${USER_ROLE:-Databricks Developer}"
 
+  # Backup existing CLAUDE.md before regenerating
+  if [[ -f "$GLOBAL_CLAUDE_MD" ]]; then
+    cp "$GLOBAL_CLAUDE_MD" "$GLOBAL_CLAUDE_MD.bak"
+  fi
+
   # Write the global CLAUDE.md with the freshly generated table
   cat > "$GLOBAL_CLAUDE_MD" <<HEREDOC
 # Global AI Assistant Instructions
@@ -165,6 +170,7 @@ The Databricks MCP server is configured per-project in \`.mcp.json\`. When avail
 HEREDOC
 
   ok "~/.claude/CLAUDE.md regenerated"
+  log "Previous CLAUDE.md backed up to ~/.claude/CLAUDE.md.bak"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────

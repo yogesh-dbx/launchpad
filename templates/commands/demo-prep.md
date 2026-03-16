@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Write, Glob, Grep, Bash(git:*), Bash(databricks:*), Task
+allowed-tools: Read, Write, Glob, Grep, Bash(git:*), Bash(databricks:*), Agent
 description: "Prepare code and notebooks for a customer demo"
 argument-hint: "Demo topic or audience"
 ---

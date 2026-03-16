@@ -1,5 +1,5 @@
 ---
-allowed-tools: Read, Glob, Grep, Task
+allowed-tools: Read, Glob, Grep, Agent
 description: "Review code quality before customer delivery"
 argument-hint: "Optional: specific concerns"
 ---
