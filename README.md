@@ -52,8 +52,6 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
 ~/.local/bin/
   newproject                   # Create a new project with full launchpad
   openproject                  # Open an existing project (interactive picker or by name)
-  newaidev                     # Lighter project init variant
-  newproj                      # Minimal project init
   gh-project-init              # Set up GitHub Projects v2 board
   updateaidevkit               # Pull latest AI Dev Kit + refresh all projects
   dbx-workspace-info           # Print Databricks workspace details
