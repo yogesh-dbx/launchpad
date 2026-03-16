@@ -211,7 +211,7 @@ install_scripts() {
   local bin_dir="$HOME/.local/bin"
   mkdir -p "$bin_dir"
 
-  local scripts=(newproject openproject gh-project-init updateaidevkit dbx-workspace-info)
+  local scripts=(newproject openproject gh-project-init updateaidevkit dbx-workspace-info dbx-profile)
   local installed=0
 
   for script in "${scripts[@]}"; do

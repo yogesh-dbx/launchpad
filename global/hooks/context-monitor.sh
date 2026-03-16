@@ -3,6 +3,10 @@
 # Reads context % from bridge file written by statusline.sh
 set -euo pipefail
 
+# Clean up stale bridge files from previous sessions (older than 1 day)
+find "$HOME/.claude" -name ".context-pct-*" -mtime +1 -delete 2>/dev/null || true
+find "$HOME/.claude" -name ".context-warned-*" -mtime +1 -delete 2>/dev/null || true
+
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"')
 

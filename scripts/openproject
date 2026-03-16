@@ -86,8 +86,8 @@ fi
 # ── Interactive picker (no argument) ──────────────────────────────────────────
 projects=()
 while IFS= read -r d; do
-  projects+=("$d")
-done < <(find "$DEV_DIR" -maxdepth 1 -mindepth 1 -type d ! -name '.*' | sort)
+  projects+=("$DEV_DIR/$d")
+done < <(ls -t "$DEV_DIR" | while read -r name; do [[ -d "$DEV_DIR/$name" && "$name" != .* ]] && echo "$name"; done)
 
 if [[ ${#projects[@]} -eq 0 ]]; then
   die "No projects in $DEV_DIR"

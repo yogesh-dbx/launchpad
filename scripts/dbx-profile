@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# dbx-profile - Manage Databricks CLI profiles
+# Usage: dbx-profile [show|list|use <name>|add <name>|test]
+set -euo pipefail
+
+CONFIG_FILE="$HOME/.config/aidevkit/config"
+if [[ -f "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+fi
+
+cfg="$HOME/.databrickscfg"
+action="${1:-show}"
+
+case "$action" in
+  show)
+    profile="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+    host=$(awk -v p="[$profile]" '
+      $0 == p { found=1; next }
+      /^\[/ { found=0 }
+      found && /^host/ { gsub(/^host[ ]*=[ ]*/, ""); print; exit }
+    ' "$cfg" 2>/dev/null)
+
+    echo ""
+    echo "  ┌─────────────────────────────────────────┐"
+    echo "  │  Databricks Active Profile               │"
+    echo "  ├─────────────────────────────────────────┤"
+    printf "  │  Profile:   %-28s│\n" "$profile"
+    printf "  │  Workspace: %-28s│\n" "${host:-<not set>}"
+    echo "  └─────────────────────────────────────────┘"
+    if [[ -n "${DATABRICKS_HOST:-}" ]]; then
+      echo "  ⚠ DATABRICKS_HOST env var is set → overrides profile!"
+      echo "    Actual target: $DATABRICKS_HOST"
+      echo "    Fix: unset DATABRICKS_HOST DATABRICKS_TOKEN"
+    fi
+    echo ""
+    ;;
+
+  list|ls)
+    echo ""
+    echo "  Databricks Profiles (~/.databrickscfg):"
+    echo "  ────────────────────────────────────────"
+    current="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+    awk -v cur="$current" '
+    /^\[/ {
+      if (name != "") printf "  %s %-22s %s\n", (name == cur ? "▶" : " "), name, host
+      gsub(/[\[\]]/, "")
+      name=$0
+      host=""
+    }
+    /^host/ {
+      sub(/^host[ ]*=[ ]*/, "")
+      host=$0
+    }
+    END {
+      if (name != "") printf "  %s %-22s %s\n", (name == cur ? "▶" : " "), name, host
+    }' "$cfg" 2>/dev/null
+    echo ""
+    echo "  Active: $current"
+    echo "  Switch: dbx-profile use <name>"
+    echo ""
+    ;;
+
+  use|switch)
+    target="${2:-}"
+    if [[ -z "$target" ]]; then
+      echo "Usage: dbx-profile use <profile-name>" >&2
+      exit 1
+    fi
+    if ! grep -q "^\[$target\]" "$cfg" 2>/dev/null; then
+      echo "  ✗ Profile not found: $target" >&2
+      echo "  Run: dbx-profile list" >&2
+      exit 1
+    fi
+    export DATABRICKS_CONFIG_PROFILE="$target"
+    unset DATABRICKS_HOST DATABRICKS_TOKEN 2>/dev/null || true
+    echo "  ✓ Switched to profile: $target"
+    echo "  Note: export takes effect in this shell only."
+    echo "  To persist: export DATABRICKS_CONFIG_PROFILE=$target"
+    ;;
+
+  add|new)
+    name="${2:-}"
+    if [[ -z "$name" ]]; then
+      read -rp "  Profile name: " name
+      [[ -z "$name" ]] && { echo "  ✗ Name required" >&2; exit 1; }
+    fi
+    if grep -q "^\[$name\]" "$cfg" 2>/dev/null; then
+      echo "  ✗ Profile already exists: $name" >&2
+      echo "  Edit manually: ~/.databrickscfg" >&2
+      exit 1
+    fi
+    read -rp "  Workspace URL (https://...): " host
+    [[ -z "$host" ]] && { echo "  ✗ URL required" >&2; exit 1; }
+    read -rp "  Token (dapi...): " token
+    [[ -z "$token" ]] && { echo "  ✗ Token required" >&2; exit 1; }
+
+    echo "" >> "$cfg"
+    echo "[$name]" >> "$cfg"
+    echo "host  = $host" >> "$cfg"
+    echo "token = $token" >> "$cfg"
+
+    echo "  ✓ Profile added: $name"
+    echo "  Switch to it: dbx-profile use $name"
+    ;;
+
+  test|check)
+    profile="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+    echo "  Testing profile: $profile"
+    if databricks auth describe --profile "$profile" 2>&1; then
+      echo ""
+      echo "  ✓ Connection OK"
+    else
+      echo "  ✗ Connection failed" >&2
+    fi
+    ;;
+
+  *)
+    echo "Usage: dbx-profile [show|list|use <name>|add <name>|test]"
+    ;;
+esac

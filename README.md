@@ -23,6 +23,8 @@ cd launchpad
 bash install-launchpad.sh
 ```
 
+> **Note:** This repo is currently private. Request access from the repo owner or fork it to your own account.
+
 On first run, the installer prompts for your name, role, and projects directory. These are saved to `~/.config/aidevkit/config` so subsequent runs are non-interactive.
 
 The installer is idempotent. Run it again after pulling updates to refresh all installed files.
@@ -45,8 +47,8 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
     databricks-executor.md     # Subagent for Databricks execution tasks
   hooks/
     context-monitor.sh         # Warns when context window is running low
-    inject-open-issues.sh      # Injects open GitHub issues into every prompt
-    claude-todo-hook           # Tracks TODOs across sessions
+    inject-open-issues.sh      # Injects open GitHub issues (available, not wired by default)
+    claude-todo-hook           # Tracks TODOs and GitHub issues across sessions
   statusline.sh                # Status bar: model, branch, cost, context usage
 
 ~/.local/bin/
@@ -55,6 +57,7 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
   gh-project-init              # Set up GitHub Projects v2 board
   updateaidevkit               # Pull latest AI Dev Kit + refresh all projects
   dbx-workspace-info           # Print Databricks workspace details
+  dbx-profile                  # Manage Databricks CLI profiles (show, list, use, add, test)
 
 ~/.local/share/project-templates/
   CLAUDE.md                    # Project-level Claude instructions template
@@ -178,6 +181,28 @@ cd launchpad
 git pull
 bash install-launchpad.sh
 ```
+
+## Uninstalling
+
+To remove launchpad-installed files:
+
+```bash
+# Global config (selective — only remove launchpad-managed files)
+rm -f ~/.claude/CLAUDE.md
+rm -rf ~/.claude/rules ~/.claude/commands ~/.claude/agents ~/.claude/hooks
+rm -f ~/.claude/statusline.sh
+
+# Scripts
+rm -f ~/.local/bin/{newproject,openproject,gh-project-init,updateaidevkit,dbx-workspace-info,dbx-profile,claude-todo-hook}
+
+# Templates
+rm -rf ~/.local/share/project-templates
+
+# User config
+rm -rf ~/.config/aidevkit
+```
+
+This does NOT remove the AI Dev Kit itself (`~/.ai-dev-kit/`), project-level configs, or `~/.claude/settings.json` (your customized permissions).
 
 ## Troubleshooting
 

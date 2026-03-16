@@ -63,12 +63,10 @@ PROJECT_NAME/
 
 ## Deployment
 
-Push to `main` triggers automatic deployment via GitHub Actions:
-```
-main → databricks bundle deploy --target prod
-```
-
-Feature branches deploy to dev:
-```
+Deploy manually via GitHub Actions (workflow dispatch) or CLI:
+```bash
+# Manual deploy to dev
 databricks bundle deploy --target dev
 ```
+
+The included `.github/workflows/deploy.yml` supports manual dispatch to the `dev` target. Production deployment is not automated by default — add a production target and trigger when ready.
