@@ -18,8 +18,8 @@ The launchpad layer sits on top of the [Databricks AI Dev Kit](https://github.co
 ## Installation
 
 ```bash
-git clone https://github.com/databricks-solutions/ai-dev-kit.git
-cd ai-dev-kit/launchpad
+git clone https://github.com/yogesh-singh_data/ai-dev-kit-launchpad.git
+cd ai-dev-kit-launchpad
 bash install-launchpad.sh
 ```
 
@@ -142,7 +142,7 @@ Drop `.md` files into `~/.claude/rules/`. Claude applies them based on the file 
 
 Project templates live in `~/.local/share/project-templates/`. Edit them directly — `newproject` copies from this directory. Changes take effect on the next project you create.
 
-To modify templates at the source (so `updateaidevkit` preserves your changes), edit the files in this repo under `launchpad/templates/` and re-run the installer.
+To modify templates at the source (so `updateaidevkit` preserves your changes), edit the files in this repo under `templates/` and re-run the installer.
 
 ### Adding Commands
 
@@ -153,7 +153,7 @@ To add a global slash command, create a markdown file in `~/.claude/commands/`:
 Description of what the command does and instructions for Claude.
 ```
 
-For project-specific commands, add them to `launchpad/templates/commands/` and re-run the installer, or drop them directly into a project's `.claude/commands/` directory.
+For project-specific commands, add them to `templates/commands/` and re-run the installer, or drop them directly into a project's `.claude/commands/` directory.
 
 ## Updating
 
@@ -168,9 +168,9 @@ This updates the AI Dev Kit core, refreshes skills in every project under your d
 To update the launchpad itself (scripts, templates, hooks):
 
 ```bash
-cd ai-dev-kit
+cd ai-dev-kit-launchpad
 git pull
-bash launchpad/install-launchpad.sh
+bash install-launchpad.sh
 ```
 
 ## Troubleshooting
