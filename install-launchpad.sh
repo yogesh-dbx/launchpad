@@ -202,7 +202,7 @@ install_scripts() {
   local bin_dir="$HOME/.local/bin"
   mkdir -p "$bin_dir"
 
-  local scripts=(newproject newaidev newproj gh-project-init updateaidevkit dbx-workspace-info)
+  local scripts=(newproject openproject newaidev newproj gh-project-init updateaidevkit dbx-workspace-info)
   local installed=0
 
   for script in "${scripts[@]}"; do
@@ -265,7 +265,7 @@ print_summary() {
   echo ""
   echo "Next steps:"
   echo "  1. Create a project:    newproject my-pipeline"
-  echo "  2. Open an existing one: cd ~/dev/my-project && claude"
+  echo "  2. Open an existing one: openproject my-project"
   echo "  3. Update later:        updateaidevkit"
   echo ""
 }
