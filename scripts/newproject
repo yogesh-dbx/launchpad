@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# newproject - Create a new project, install AI Dev Kit, and launch Ghostty + Claude Code
+# newproject - Create a new project, install AI Dev Kit, and launch Claude Code
 set -euo pipefail
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -17,23 +17,50 @@ die()    { echo -e "${RED}✗${RESET} $*" >&2; exit 1; }
 
 # ── Usage ─────────────────────────────────────────────────────────────────────
 usage() {
-  echo -e "${BOLD}Usage:${RESET}  newproject <project-name>"
+  echo -e "${BOLD}Usage:${RESET}  newproject <project-name> [options]"
   echo ""
-  echo -e "${BOLD}Example:${RESET}"
-  echo "  newproject my-databricks-app"
+  echo -e "${BOLD}Options:${RESET}"
+  echo "  --profile <name>    Databricks CLI profile (default: DEFAULT)"
+  echo "  --catalog <name>    Unity Catalog name (prompted if omitted)"
+  echo "  --no-github         Skip GitHub repo + Projects v2 setup"
+  echo "  --public            Make the GitHub repo public (default: private)"
+  echo "  --no-open           Don't launch Claude Code after setup"
+  echo ""
+  echo -e "${BOLD}Examples:${RESET}"
+  echo "  newproject my-pipeline --profile fe-sandbox --catalog yogesh"
+  echo "  newproject quick-test --no-github --no-open"
+  echo "  newproject demo-app --catalog analytics --public"
   echo ""
   echo "Creates ~/dev/<project-name>, installs the Databricks AI Dev Kit,"
-  echo "then opens Ghostty with Claude Code running in the new project."
+  echo "stamps project config with your profile and catalog, then opens Claude Code."
   exit 1
 }
 
-# ── Validate args ──────────────────────────────────────────────────────────────
+# ── Parse arguments ───────────────────────────────────────────────────────────
 [[ $# -lt 1 ]] && usage
 [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && usage
 
 PROJECT_NAME="$1"
+shift
 
-# Project name must be non-empty, no slashes, no leading dots
+PROFILE=""
+CATALOG=""
+DO_GITHUB=true
+GH_PUBLIC=""
+OPEN_AFTER=true
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)    PROFILE="$2"; shift 2 ;;
+    --catalog)    CATALOG="$2"; shift 2 ;;
+    --no-github)  DO_GITHUB=false; shift ;;
+    --public)     GH_PUBLIC="--public"; shift ;;
+    --no-open)    OPEN_AFTER=false; shift ;;
+    *) die "Unknown option: $1. Run 'newproject --help' for usage." ;;
+  esac
+done
+
+# ── Validate project name ────────────────────────────────────────────────────
 if [[ -z "$PROJECT_NAME" ]]; then
   die "Project name cannot be empty."
 fi
@@ -44,45 +71,86 @@ if [[ "$PROJECT_NAME" =~ ^[[:space:]] || "$PROJECT_NAME" =~ [[:space:]]$ ]]; the
   die "Project name cannot start or end with spaces. Use hyphens instead."
 fi
 
-# ── Resolve paths ──────────────────────────────────────────────────────────────
-DEV_DIR="$HOME/dev"
+# ── Resolve profile ──────────────────────────────────────────────────────────
+if [[ -z "$PROFILE" ]]; then
+  PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+fi
+export DATABRICKS_CONFIG_PROFILE="$PROFILE"
+
+# ── Resolve paths ─────────────────────────────────────────────────────────────
+# Read DEV_DIR from config if available, otherwise default to ~/dev
+CONFIG_FILE="$HOME/.config/aidevkit/config"
+if [[ -f "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+fi
+DEV_DIR="${DEV_DIR:-$HOME/dev}"
 PROJECT_DIR="$DEV_DIR/$PROJECT_NAME"
 
 if [[ -e "$PROJECT_DIR" ]]; then
   die "Directory already exists: $PROJECT_DIR"
 fi
 
-# ── Check Ghostty (only required when not running inside VS Code/Cursor) ───────
-GHOSTTY_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
-if [[ "${TERM_PROGRAM:-}" != "vscode" && ! -x "$GHOSTTY_BIN" ]]; then
-  die "Ghostty not found at $GHOSTTY_BIN\n  Install it from: https://ghostty.org/download"
-fi
-
-# ── Check claude ───────────────────────────────────────────────────────────────
+# ── Check prerequisites ──────────────────────────────────────────────────────
 if ! command -v claude &>/dev/null; then
   die "'claude' CLI not found in PATH. Install Claude Code first:\n  npm install -g @anthropic-ai/claude-code"
 fi
 CLAUDE_BIN="$(command -v claude)"
 
-# ── Create project directory ───────────────────────────────────────────────────
+# Detect terminal for launch
+GHOSTTY_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
+HAS_GHOSTTY=false
+if [[ -x "$GHOSTTY_BIN" ]]; then
+  HAS_GHOSTTY=true
+fi
+
+# ── Verify Databricks auth ───────────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}newproject${RESET} — setting up ${CYAN}$PROJECT_NAME${RESET}"
 echo "──────────────────────────────────────────────"
+log "Checking Databricks auth for profile: $PROFILE"
+
+if databricks auth status --profile "$PROFILE" &>/dev/null; then
+  ok "Authenticated with profile '$PROFILE'"
+else
+  warn "Profile '$PROFILE' not authenticated. Running login..."
+  databricks auth login --profile "$PROFILE" || die "Authentication failed for profile '$PROFILE'"
+  ok "Authenticated with profile '$PROFILE'"
+fi
+
+# ── Resolve catalog ──────────────────────────────────────────────────────────
+if [[ -z "$CATALOG" ]]; then
+  # Try to read from profile config
+  DBX_CATALOG=$(awk -v p="[$PROFILE]" '
+    $0 == p { found=1; next }
+    found && /^\[/ { exit }
+    found && /^catalog/ { gsub(/^catalog[ ]*=[ ]*/, ""); print; exit }
+  ' "$HOME/.databrickscfg" 2>/dev/null) || true
+
+  if [[ -n "$DBX_CATALOG" ]]; then
+    CATALOG="$DBX_CATALOG"
+    ok "Catalog from profile: $CATALOG"
+  else
+    echo -e -n "  ${CYAN}Enter Unity Catalog name for this project:${RESET} "
+    read -r CATALOG
+    [[ -z "$CATALOG" ]] && die "Catalog name is required. Use --catalog <name> or set it in your profile."
+  fi
+fi
+ok "Unity Catalog: $CATALOG"
+
+# ── Create project directory ─────────────────────────────────────────────────
 log "Creating $PROJECT_DIR"
 mkdir -p "$PROJECT_DIR"
 ok "Directory created"
 
-# ── Run AI Dev Kit installer ───────────────────────────────────────────────────
+# ── Run AI Dev Kit installer ─────────────────────────────────────────────────
 echo ""
 log "Running Databricks AI Dev Kit installer..."
-echo -e "  ${YELLOW}(Running silently with default settings)${RESET}"
+echo -e "  ${YELLOW}(Running silently with profile: $PROFILE)${RESET}"
 echo ""
 
-# The installer must run in the project directory.
-# All options passed via env vars to avoid interactive prompts.
 (
   cd "$PROJECT_DIR"
-  DEVKIT_PROFILE=DEFAULT \
+  DEVKIT_PROFILE="$PROFILE" \
   DEVKIT_SCOPE=project \
   DEVKIT_TOOLS=claude,cursor,copilot \
   DEVKIT_MCP_PATH="$HOME/.ai-dev-kit" \
@@ -93,10 +161,87 @@ echo ""
   warn "Re-run manually: cd $PROJECT_DIR && bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)"
 }
 
+# ── GitHub initialization (or local-only template copy) ──────────────────────
+TEMPLATES_DIR="$HOME/.local/share/project-templates"
+
+if [[ "$DO_GITHUB" == true ]]; then
+  if command -v gh-project-init &>/dev/null; then
+    echo ""
+    log "Running GitHub project initialization..."
+    local_args=("$PROJECT_DIR" --yes --catalog "$CATALOG")
+    [[ -n "$GH_PUBLIC" ]] && local_args+=("$GH_PUBLIC")
+
+    if gh-project-init "${local_args[@]}"; then
+      ok "GitHub repo + Projects v2 initialized"
+    else
+      warn "GitHub init failed (project still usable locally)"
+    fi
+  else
+    warn "gh-project-init not found in PATH. Skipping GitHub setup."
+    warn "Install it from the launchpad repo: cp scripts/gh-project-init ~/.local/bin/"
+    DO_GITHUB=false
+  fi
+fi
+
+if [[ "$DO_GITHUB" == false && -d "$TEMPLATES_DIR" ]]; then
+  # Copy templates locally without GitHub
+  log "Copying project templates (local-only mode)..."
+  mkdir -p "$PROJECT_DIR/.claude/commands" "$PROJECT_DIR/.claude/agents"
+
+  cp "$TEMPLATES_DIR/commands/"*.md "$PROJECT_DIR/.claude/commands/" 2>/dev/null || true
+  cp "$TEMPLATES_DIR/agents/"*.md "$PROJECT_DIR/.claude/agents/" 2>/dev/null || true
+
+  # Copy and stamp project CLAUDE.md
+  if [[ -f "$TEMPLATES_DIR/CLAUDE.md" ]]; then
+    cp "$TEMPLATES_DIR/CLAUDE.md" "$PROJECT_DIR/.claude/CLAUDE.md"
+    # Stamp placeholders
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' "s/PROJECT_NAME/$PROJECT_NAME/g" "$PROJECT_DIR/.claude/CLAUDE.md"
+      sed -i '' "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/.claude/CLAUDE.md"
+      sed -i '' "s/DATABRICKS_PROFILE/$PROFILE/g" "$PROJECT_DIR/.claude/CLAUDE.md"
+    else
+      sed -i "s/PROJECT_NAME/$PROJECT_NAME/g" "$PROJECT_DIR/.claude/CLAUDE.md"
+      sed -i "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/.claude/CLAUDE.md"
+      sed -i "s/DATABRICKS_PROFILE/$PROFILE/g" "$PROJECT_DIR/.claude/CLAUDE.md"
+    fi
+    ok ".claude/CLAUDE.md stamped (project: $PROJECT_NAME, catalog: $CATALOG)"
+  fi
+
+  # Copy and stamp databricks.yml
+  if [[ -f "$TEMPLATES_DIR/databricks/databricks.yml" ]]; then
+    mkdir -p "$PROJECT_DIR"
+    cp "$TEMPLATES_DIR/databricks/databricks.yml" "$PROJECT_DIR/databricks.yml"
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' "s/PROJECT_NAME/$PROJECT_NAME/g" "$PROJECT_DIR/databricks.yml"
+      sed -i '' "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/databricks.yml"
+      sed -i '' "s/DATABRICKS_PROFILE/$PROFILE/g" "$PROJECT_DIR/databricks.yml"
+    else
+      sed -i "s/PROJECT_NAME/$PROJECT_NAME/g" "$PROJECT_DIR/databricks.yml"
+      sed -i "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/databricks.yml"
+      sed -i "s/DATABRICKS_PROFILE/$PROFILE/g" "$PROJECT_DIR/databricks.yml"
+    fi
+    ok "databricks.yml stamped"
+  fi
+
+  # Copy setup script
+  if [[ -f "$TEMPLATES_DIR/scripts/01_setup_infrastructure.py" ]]; then
+    mkdir -p "$PROJECT_DIR/scripts"
+    cp "$TEMPLATES_DIR/scripts/01_setup_infrastructure.py" "$PROJECT_DIR/scripts/"
+    if [[ "$(uname)" == "Darwin" ]]; then
+      sed -i '' "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/scripts/01_setup_infrastructure.py"
+    else
+      sed -i "s/PROJECT_CATALOG/$CATALOG/g" "$PROJECT_DIR/scripts/01_setup_infrastructure.py"
+    fi
+    ok "scripts/01_setup_infrastructure.py stamped"
+  fi
+
+  ok "Templates copied (local-only mode)"
+fi
+
 # ── Create .claude/settings.local.json if missing ────────────────────────────
 CLAUDE_SETTINGS="$PROJECT_DIR/.claude/settings.local.json"
 if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
-  log "Creating .claude/settings.local.json with Databricks MCP permissions..."
+  log "Creating .claude/settings.local.json with safety permissions..."
   mkdir -p "$PROJECT_DIR/.claude"
   cat > "$CLAUDE_SETTINGS" <<'EOF'
 {
@@ -170,16 +315,19 @@ else
   ok ".claude/settings.local.json already exists, skipping"
 fi
 
-# ── Create CLAUDE.md if missing ───────────────────────────────────────────────
+# ── Create top-level CLAUDE.md if missing (fallback) ─────────────────────────
 CLAUDE_MD="$PROJECT_DIR/CLAUDE.md"
 if [[ ! -f "$CLAUDE_MD" ]]; then
-  log "Creating CLAUDE.md to activate project skills..."
-  # Use $PROJECT_NAME variable inside the heredoc via a different delimiter
+  log "Creating CLAUDE.md..."
   cat > "$CLAUDE_MD" <<HEREDOC
 # ${PROJECT_NAME}
 
 ## Project Purpose
 [Describe what this project does]
+
+## Environment
+- **Databricks Profile:** \`${PROFILE}\`
+- **Catalog:** \`${CATALOG}\`
 
 ## Notes
 - Add any project-specific conventions, data sources, or context here
@@ -294,25 +442,37 @@ else
   ok ".cursor/rules already exists, skipping"
 fi
 
-# ── Launch: detect environment and open appropriately ────────────────────────
+# ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
-if [[ "${TERM_PROGRAM:-}" == "vscode" ]]; then
-  # Running inside VS Code or Cursor integrated terminal — stay here, just cd in
-  echo -e "${GREEN}${BOLD}All done!${RESET} Project ready. Run this to open it:\n"
-  echo -e "  ${CYAN}cd $PROJECT_DIR && claude${RESET}\n"
-  # Also print a clickable path hint for VS Code
+echo "──────────────────────────────────────────────"
+echo -e "${GREEN}${BOLD}Project ready!${RESET}"
+echo ""
+echo -e "  Name:     ${CYAN}$PROJECT_NAME${RESET}"
+echo -e "  Path:     ${CYAN}$PROJECT_DIR${RESET}"
+echo -e "  Profile:  ${CYAN}$PROFILE${RESET}"
+echo -e "  Catalog:  ${CYAN}$CATALOG${RESET}"
+echo -e "  GitHub:   ${CYAN}$( [[ "$DO_GITHUB" == true ]] && echo "yes" || echo "no" )${RESET}"
+echo ""
+
+# ── Launch ────────────────────────────────────────────────────────────────────
+if [[ "$OPEN_AFTER" == false ]]; then
+  echo -e "To start working:"
+  echo -e "  ${CYAN}cd $PROJECT_DIR && claude${RESET}"
+elif [[ "${TERM_PROGRAM:-}" == "vscode" ]]; then
+  echo -e "Run this to open it:"
+  echo -e "  ${CYAN}cd $PROJECT_DIR && claude${RESET}"
+  echo ""
   echo -e "  Or open in VS Code: ${CYAN}code $PROJECT_DIR${RESET}"
   echo -e "  Or open in Cursor:  ${CYAN}cursor $PROJECT_DIR${RESET}"
-else
-  # Running from Ghostty or another external terminal — open a new Ghostty window
-  log "Launching Ghostty with Claude Code in $PROJECT_DIR ..."
+elif [[ "$HAS_GHOSTTY" == true ]]; then
+  log "Launching Ghostty with Claude Code..."
   "$GHOSTTY_BIN" \
     --working-directory="$PROJECT_DIR" \
     --command="$CLAUDE_BIN" \
     &
   ok "Ghostty launched!"
-  echo ""
-  echo -e "${GREEN}${BOLD}All done!${RESET} Your project is ready at:"
-  echo -e "  ${CYAN}$PROJECT_DIR${RESET}"
+else
+  echo -e "To start working:"
+  echo -e "  ${CYAN}cd $PROJECT_DIR && claude${RESET}"
 fi
 echo ""

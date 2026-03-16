@@ -73,10 +73,17 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
 ### Create a New Project
 
 ```bash
-newproject my-databricks-pipeline --profile DEFAULT --catalog my_catalog
+# Full setup with profile and catalog
+newproject my-pipeline --profile fe-sandbox --catalog yogesh
+
+# Minimal — uses DEFAULT profile, prompts for catalog
+newproject my-pipeline
+
+# Skip GitHub, don't auto-open Claude
+newproject quick-test --catalog analytics --no-github --no-open
 ```
 
-This creates `~/dev/my-databricks-pipeline`, runs the AI Dev Kit installer, copies project templates, and opens Claude Code in the new directory.
+This creates `~/dev/my-pipeline`, verifies Databricks auth (runs `databricks auth login` if needed), installs the AI Dev Kit, stamps project config with your profile and catalog, and opens Claude Code.
 
 ### Daily Workflow
 
