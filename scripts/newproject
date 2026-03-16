@@ -97,9 +97,13 @@ fi
 CLAUDE_BIN="$(command -v claude)"
 
 # Detect terminal for launch
-GHOSTTY_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
+GHOSTTY_BIN=""
 HAS_GHOSTTY=false
-if [[ -x "$GHOSTTY_BIN" ]]; then
+if command -v ghostty &>/dev/null; then
+  GHOSTTY_BIN="$(command -v ghostty)"
+  HAS_GHOSTTY=true
+elif [[ -x "/Applications/Ghostty.app/Contents/MacOS/ghostty" ]]; then
+  GHOSTTY_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
   HAS_GHOSTTY=true
 fi
 
@@ -317,7 +321,7 @@ fi
 
 # ── Create top-level CLAUDE.md if missing (fallback) ─────────────────────────
 CLAUDE_MD="$PROJECT_DIR/CLAUDE.md"
-if [[ ! -f "$CLAUDE_MD" ]]; then
+if [[ ! -f "$CLAUDE_MD" && ! -f "$PROJECT_DIR/.claude/CLAUDE.md" ]]; then
   log "Creating CLAUDE.md..."
   cat > "$CLAUDE_MD" <<HEREDOC
 # ${PROJECT_NAME}
@@ -378,6 +382,13 @@ if [[ ! -f "$VSCODE_SETTINGS" ]]; then
   "terminal.integrated.profiles.osx": {
     "zsh": {
       "path": "/bin/zsh",
+      "args": ["-l"]
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.profiles.linux": {
+    "bash": {
+      "path": "/bin/bash",
       "args": ["-l"]
     }
   }

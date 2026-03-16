@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # UserPromptSubmit hook — injects open GitHub issues into context
 # Runs on every user prompt so Claude always knows what's open
 set -euo pipefail

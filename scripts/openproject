@@ -41,9 +41,15 @@ if ! command -v claude &>/dev/null; then
 fi
 CLAUDE_BIN="$(command -v claude)"
 
-GHOSTTY_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
+GHOSTTY_BIN=""
 HAS_GHOSTTY=false
-[[ -x "$GHOSTTY_BIN" ]] && HAS_GHOSTTY=true
+if command -v ghostty &>/dev/null; then
+  GHOSTTY_BIN="$(command -v ghostty)"
+  HAS_GHOSTTY=true
+elif [[ -x "/Applications/Ghostty.app/Contents/MacOS/ghostty" ]]; then
+  GHOSTTY_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
+  HAS_GHOSTTY=true
+fi
 
 # ── Launch helper ─────────────────────────────────────────────────────────────
 launch() {

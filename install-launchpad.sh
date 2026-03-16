@@ -66,11 +66,15 @@ check_prerequisites() {
   fi
 
   if ! command -v databricks &>/dev/null; then
-    error "Databricks CLI not installed. Install: brew install databricks"
+    error "Databricks CLI not installed. Install: https://docs.databricks.com/dev-tools/cli/install.html"
   fi
 
   if ! command -v gh &>/dev/null; then
     warn "GitHub CLI not installed. Some features (newproject, /plan, /ship) require it."
+  fi
+
+  if ! command -v jq &>/dev/null; then
+    warn "jq not installed. Statusline requires it. Install: https://jqlang.github.io/jq/download/"
   fi
 
   if [[ ! -d "$HOME/.ai-dev-kit" ]]; then
@@ -182,6 +186,11 @@ install_global() {
     copy_dir_contents "$LAUNCHPAD_DIR/global/hooks" "$HOME/.claude/hooks"
     find "$HOME/.claude/hooks" -type f -exec chmod +x {} +
     success "Hooks installed"
+    # claude-todo-hook must also be on PATH (referenced by project settings.local.json hooks)
+    if [[ -f "$HOME/.claude/hooks/claude-todo-hook" ]]; then
+      cp "$HOME/.claude/hooks/claude-todo-hook" "$HOME/.local/bin/claude-todo-hook"
+      chmod +x "$HOME/.local/bin/claude-todo-hook"
+    fi
   fi
 
   # ── Statusline ───────────────────────────────────────────────────────────

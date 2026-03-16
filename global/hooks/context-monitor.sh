@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # PostToolUse hook — warns when context window usage is high
 # Reads context % from bridge file written by statusline.sh
 set -euo pipefail

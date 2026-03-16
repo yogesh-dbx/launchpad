@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Claude Code statusline — shows model, git branch, Databricks profile, context usage, cost
 input=$(cat)
 

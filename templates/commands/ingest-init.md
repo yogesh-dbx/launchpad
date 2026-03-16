@@ -23,7 +23,7 @@ You are an ingest scaffolding agent. Given a fully-qualified table name, you pro
 ## Phase 1: Gather Info (3 commands max)
 
 ### 1a. Parse the table name
-Split the argument into `CATALOG`, `SCHEMA`, `TABLE`. Example: `my_catalog.raw.events` → catalog=`ygs`, schema=`raw`, table=`player_events`.
+Split the argument into `CATALOG`, `SCHEMA`, `TABLE`. Example: `my_catalog.raw.events` → catalog=`my_catalog`, schema=`raw`, table=`events`.
 
 ### 1b. Get workspace info
 ```bash
@@ -95,17 +95,18 @@ Then compile.
 ### 2d. Copy and patch config.py
 ```bash
 cp ~/.local/share/project-templates/ingest/config.py src/ingest/config.py
-sed -i '' "s|INGEST_TABLE_NAME|<catalog>.<schema>.<table>|g" src/ingest/config.py
 ```
+Use the Edit tool to replace `INGEST_TABLE_NAME` with `<catalog>.<schema>.<table>` in `src/ingest/config.py`.
 
 ### 2e. Copy and patch .env.example
 ```bash
 cp ~/.local/share/project-templates/ingest/env.example src/ingest/.env.example
-sed -i '' "s|INGEST_WORKSPACE_ID|$DBX_WORKSPACE_ID|g" src/ingest/.env.example
-sed -i '' "s|INGEST_REGION|$DBX_REGION|g" src/ingest/.env.example
-sed -i '' "s|INGEST_WORKSPACE_URL|$DBX_HOST|g" src/ingest/.env.example
-sed -i '' "s|INGEST_TABLE_NAME|<catalog>.<schema>.<table>|g" src/ingest/.env.example
 ```
+Use the Edit tool to make the following replacements in `src/ingest/.env.example`:
+- Replace `INGEST_WORKSPACE_ID` with `$DBX_WORKSPACE_ID`
+- Replace `INGEST_REGION` with `$DBX_REGION`
+- Replace `INGEST_WORKSPACE_URL` with `$DBX_HOST`
+- Replace `INGEST_TABLE_NAME` with `<catalog>.<schema>.<table>`
 
 ### 2f. Copy and patch producer.py
 ```bash

@@ -16,7 +16,11 @@ ok()   { echo -e "${GREEN}✓${RESET} $*"; }
 warn() { echo -e "${YELLOW}⚠${RESET}  $*"; }
 die()  { echo -e "${RED}✗${RESET} $*" >&2; exit 1; }
 
-DEV_DIR="$HOME/dev"
+CONFIG_FILE="$HOME/.config/aidevkit/config"
+if [[ -f "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+fi
+DEV_DIR="${DEV_DIR:-$HOME/dev}"
 AI_DEV_KIT_REPO="$HOME/.ai-dev-kit/repo"
 AI_DEV_KIT_VERSION_FILE="$HOME/.ai-dev-kit/version"
 GLOBAL_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
@@ -105,13 +109,21 @@ else
     SKILL_TABLE="${SKILL_TABLE}| \`${skill_name}\` | ${short_desc} |\n"
   done
 
+  # Read user config for personalization
+  CONFIG_FILE="$HOME/.config/aidevkit/config"
+  if [[ -f "$CONFIG_FILE" ]]; then
+    source "$CONFIG_FILE"
+  fi
+  user_name="${USER_NAME:-$(git config --global user.name 2>/dev/null || echo "Developer")}"
+  user_role="${USER_ROLE:-Databricks Developer}"
+
   # Write the global CLAUDE.md with the freshly generated table
   cat > "$GLOBAL_CLAUDE_MD" <<HEREDOC
 # Global AI Assistant Instructions
 
 ## About Me
-- **Name:** $(git config --global user.name || echo "Developer")
-- **Role:** ${AIDEVKIT_ROLE:-Databricks Developer}
+- **Name:** $user_name
+- **Role:** $user_role
 
 ---
 
