@@ -27,7 +27,7 @@ usage() {
   echo "  --no-open           Don't launch Claude Code after setup"
   echo ""
   echo -e "${BOLD}Examples:${RESET}"
-  echo "  newproject my-pipeline --profile fe-sandbox --catalog yogesh"
+  echo "  newproject my-pipeline --profile my-workspace --catalog analytics"
   echo "  newproject quick-test --no-github --no-open"
   echo "  newproject demo-app --catalog analytics --public"
   echo ""

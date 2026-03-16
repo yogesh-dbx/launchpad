@@ -76,7 +76,7 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
 
 ```bash
 # Full setup with profile and catalog
-newproject my-pipeline --profile fe-sandbox --catalog yogesh
+newproject my-pipeline --profile my-workspace --catalog analytics
 
 # Minimal — uses DEFAULT profile, prompts for catalog
 newproject my-pipeline
