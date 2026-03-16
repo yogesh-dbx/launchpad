@@ -1,0 +1,31 @@
+bundle:
+  name: PROJECT_NAME
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    default: PROJECT_CATALOG
+  raw_schema:
+    default: raw
+  cleansed_schema:
+    default: cleansed
+  curated_schema:
+    default: curated
+  warehouse_id:
+    lookup:
+      warehouse: "Serverless Starter Warehouse"
+
+targets:
+  dev:
+    default: true
+    mode: development
+    workspace:
+      profile: DATABRICKS_PROFILE
+
+  prod:
+    mode: production
+    workspace:
+      profile: DATABRICKS_PROFILE
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}

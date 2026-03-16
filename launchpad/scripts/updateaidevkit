@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# updateaidevkit - Update AI Dev Kit, refresh skills in all ~/dev/ projects,
+#                  and regenerate ~/.claude/CLAUDE.md skill table from source
+set -euo pipefail
+
+# ── Colors ────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+log()  { echo -e "${CYAN}▶${RESET} $*"; }
+ok()   { echo -e "${GREEN}✓${RESET} $*"; }
+warn() { echo -e "${YELLOW}⚠${RESET}  $*"; }
+die()  { echo -e "${RED}✗${RESET} $*" >&2; exit 1; }
+
+DEV_DIR="$HOME/dev"
+AI_DEV_KIT_REPO="$HOME/.ai-dev-kit/repo"
+AI_DEV_KIT_VERSION_FILE="$HOME/.ai-dev-kit/version"
+GLOBAL_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+
+echo ""
+echo -e "${BOLD}updateaidevkit${RESET} — keeping your AI Dev Kit in sync"
+echo "──────────────────────────────────────────────────"
+
+# ── Step 1: Re-run AI Dev Kit installer with --force ─────────────────────────
+echo ""
+log "Updating AI Dev Kit core (MCP server, venv, dependencies)..."
+echo -e "  ${YELLOW}(Running installer with --force from a temp directory)${RESET}"
+echo ""
+
+TMPDIR_UPDATE="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_UPDATE"' EXIT
+
+(
+  cd "$TMPDIR_UPDATE"
+  DEVKIT_PROFILE=DEFAULT \
+  DEVKIT_SCOPE=project \
+  DEVKIT_TOOLS=claude,cursor,copilot \
+  DEVKIT_MCP_PATH="$HOME/.ai-dev-kit" \
+  DEVKIT_FORCE=true \
+  DEVKIT_SILENT=true \
+    bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)
+) || warn "AI Dev Kit core update had warnings — continuing anyway."
+
+INSTALLED_VERSION="$(cat "$AI_DEV_KIT_VERSION_FILE" 2>/dev/null || echo 'unknown')"
+ok "AI Dev Kit updated to v${INSTALLED_VERSION}"
+
+# ── Pull latest main into local repo clone so it stays current ───────────────
+if [[ -d "$AI_DEV_KIT_REPO/.git" ]]; then
+  log "Pulling latest main into ~/.ai-dev-kit/repo..."
+  git -C "$AI_DEV_KIT_REPO" fetch origin main 2>/dev/null && \
+  git -C "$AI_DEV_KIT_REPO" checkout FETCH_HEAD 2>/dev/null && \
+  ok "Local repo updated to latest main" || \
+  warn "Could not pull main — local repo may be behind"
+fi
+
+# ── Step 2: Refresh skills in all dev projects that have .ai-dev-kit ──────────
+echo ""
+log "Refreshing skills in all projects in ~/dev/..."
+
+UPDATED=0
+FIRST_PROJECT_SKILLS_DIR=""
+
+for project_dir in "$DEV_DIR"/*/; do
+  [[ ! -d "$project_dir/.ai-dev-kit" ]] && continue
+  project_name="$(basename "$project_dir")"
+
+  echo -e "  ${CYAN}→${RESET} $project_name"
+  (
+    cd "$project_dir"
+    bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/databricks-skills/install_skills.sh) --force \
+      2>&1 | grep -E "✓|✗|Installed|Skipped|Error" | sed 's/^/    /' || true
+  )
+  # Track the first project's skills dir as source for CLAUDE.md generation
+  [[ -z "$FIRST_PROJECT_SKILLS_DIR" ]] && FIRST_PROJECT_SKILLS_DIR="$project_dir/.claude/skills"
+  (( UPDATED++ ))
+done
+
+if [[ $UPDATED -eq 0 ]]; then
+  warn "No AI Dev Kit projects found in ~/dev/ — CLAUDE.md will use local repo for skill names."
+  FIRST_PROJECT_SKILLS_DIR="$AI_DEV_KIT_REPO/databricks-skills"
+fi
+
+ok "Skills refreshed in $UPDATED project(s)"
+
+# ── Step 3: Rebuild ~/.claude/CLAUDE.md skill table from freshly updated skills
+echo ""
+log "Regenerating ~/.claude/CLAUDE.md skill table from latest skills..."
+
+if [[ ! -d "$FIRST_PROJECT_SKILLS_DIR" ]]; then
+  warn "No skills directory found — skipping CLAUDE.md regeneration."
+else
+  # Build skill table by reading SKILL.md frontmatter from the freshly downloaded skills
+  SKILL_TABLE=""
+  for skill_dir in "$FIRST_PROJECT_SKILLS_DIR"/*/; do
+    skill_name="$(basename "$skill_dir")"
+    [[ "$skill_name" == "TEMPLATE" ]] && continue
+    skill_file="$skill_dir/SKILL.md"
+    [[ ! -f "$skill_file" ]] && continue
+    description="$(grep -m1 '^description:' "$skill_file" | sed 's/^description:[[:space:]]*//' | tr -d '"')"
+    short_desc="$(echo "$description" | sed 's/\. .*//' | cut -c1-80)"
+    SKILL_TABLE="${SKILL_TABLE}| \`${skill_name}\` | ${short_desc} |\n"
+  done
+
+  # Write the global CLAUDE.md with the freshly generated table
+  cat > "$GLOBAL_CLAUDE_MD" <<HEREDOC
+# Global AI Assistant Instructions
+
+## About Me
+- **Name:** $(git config --global user.name || echo "Developer")
+- **Role:** ${AIDEVKIT_ROLE:-Databricks Developer}
+
+---
+
+## Databricks Skills
+
+Every project created with \`newproject\` includes Databricks-specific skills in \`.claude/skills/\`. Always use these as the **primary reference** for Databricks tasks — prefer them over general training knowledge.
+
+| Skill | When to use |
+|-------|-------------|
+$(echo -e "$SKILL_TABLE" | sed '/^$/d')
+
+---
+
+## MCP Tools
+
+The Databricks MCP server is configured per-project in \`.mcp.json\`. When available, use these tools to execute work directly on Databricks rather than generating code for the user to run:
+
+| Tool | Purpose |
+|------|---------|
+| \`mcp__databricks__execute_sql\` | Run SQL against a warehouse |
+| \`mcp__databricks__run_python_file_on_databricks\` | Run a Python file on a cluster |
+| \`mcp__databricks__upload_file\` | Upload a file to the workspace |
+| \`mcp__databricks__upload_folder\` | Upload a folder to the workspace |
+| \`mcp__databricks__create_or_update_pipeline\` | Create or update a DLT pipeline |
+| \`mcp__databricks__start_update\` | Start a pipeline update |
+| \`mcp__databricks__get_update\` | Get pipeline update status |
+| \`mcp__databricks__get_pipeline\` | Get pipeline details |
+| \`mcp__databricks__get_pipeline_events\` | Get pipeline events/logs |
+| \`mcp__databricks__delete_pipeline\` | Delete a pipeline |
+| \`mcp__databricks__execute_sql_multi\` | Run multiple SQL statements |
+
+---
+
+## Environment Defaults
+
+- Use \`uv\` for Python dependency management (\`uv venv\`, \`uv pip install\`)
+- Databricks CLI is available: verify auth with \`databricks auth status\`
+- Default Databricks profile: \`DEFAULT\`
+HEREDOC
+
+  ok "~/.claude/CLAUDE.md regenerated"
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+echo ""
+echo -e "${GREEN}${BOLD}Update complete!${RESET}"
+echo -e "  AI Dev Kit:   ${CYAN}v${INSTALLED_VERSION}${RESET}"
+echo -e "  CLAUDE.md:    ${CYAN}~/.claude/CLAUDE.md${RESET} regenerated"
+echo -e "  Projects:     ${CYAN}${UPDATED} updated${RESET}"
+echo ""

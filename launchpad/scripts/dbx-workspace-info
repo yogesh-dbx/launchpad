@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# dbx-workspace-info — Extract workspace ID, host, and region from Databricks profile
+# Used by ingest-init and other scripts that need Zerobus endpoint construction
+set -euo pipefail
+
+FORMAT="env"
+PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+DBX_CFG="$HOME/.databrickscfg"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --json)    FORMAT="json"; shift ;;
+        --profile) PROFILE="$2"; shift 2 ;;
+        -*)        echo "Usage: dbx-workspace-info [--profile NAME] [--json]" >&2; exit 1 ;;
+        *)         PROFILE="$1"; shift ;;
+    esac
+done
+
+# Extract host from profile
+HOST=$(awk -v p="[$PROFILE]" '
+    $0 == p { found=1; next }
+    /^\[/ { found=0 }
+    found && /^host/ { gsub(/^host[ ]*=[ ]*/, ""); print; exit }
+' "$DBX_CFG" 2>/dev/null)
+
+if [[ -z "$HOST" ]]; then
+    echo "ERROR: No host found for profile '$PROFILE' in ~/.databrickscfg" >&2
+    exit 1
+fi
+
+# Strip protocol
+HOST_CLEAN="${HOST#https://}"
+HOST_CLEAN="${HOST_CLEAN#http://}"
+
+# Get workspace ID from metastore assignment API
+WORKSPACE_ID=$(databricks api get /api/2.1/unity-catalog/current-metastore-assignment \
+    --profile "$PROFILE" 2>/dev/null \
+    | python3 -c "import sys,json; print(json.load(sys.stdin).get('workspace_id',''))" 2>/dev/null) || true
+
+# Detect region from host pattern
+# AWS: *.cloud.databricks.com (us-east-1 default, or region in hostname)
+# Azure: *.azuredatabricks.net
+# GCP: *.gcp.databricks.com
+REGION="us-east-1"  # default for AWS
+if [[ "$HOST_CLEAN" == *".gcp."* ]]; then
+    REGION="us-central1"
+elif [[ "$HOST_CLEAN" == *".azuredatabricks.net"* ]]; then
+    REGION="eastus"
+fi
+
+# Extract catalog from profile
+CATALOG=$(awk -v p="[$PROFILE]" '
+    $0 == p { found=1; next }
+    /^\[/ { found=0 }
+    found && /^catalog/ { gsub(/^catalog[ ]*=[ ]*/, ""); print; exit }
+' "$DBX_CFG" 2>/dev/null)
+
+# Output format: key=value for easy sourcing
+# Usage: eval "$(dbx-workspace-info)" or source <(dbx-workspace-info)
+if [[ "$FORMAT" == "json" ]]; then
+    python3 -c "
+import json
+print(json.dumps({
+    'profile': '$PROFILE',
+    'host': '$HOST',
+    'host_clean': '$HOST_CLEAN',
+    'workspace_id': '$WORKSPACE_ID',
+    'region': '$REGION',
+    'catalog': '$CATALOG',
+    'zerobus_endpoint': '${WORKSPACE_ID}.zerobus.${REGION}.cloud.databricks.com',
+}, indent=2))
+"
+else
+    echo "DBX_PROFILE=$PROFILE"
+    echo "DBX_HOST=$HOST"
+    echo "DBX_HOST_CLEAN=$HOST_CLEAN"
+    echo "DBX_WORKSPACE_ID=$WORKSPACE_ID"
+    echo "DBX_REGION=$REGION"
+    echo "DBX_CATALOG=$CATALOG"
+    echo "ZEROBUS_ENDPOINT=${WORKSPACE_ID}.zerobus.${REGION}.cloud.databricks.com"
+fi

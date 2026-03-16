@@ -1,0 +1,585 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# gh-project-init — Initialize a GitHub repo with full project infrastructure
+# Creates repo, labels, issue templates, Projects v2 board, DAB config, and Claude commands
+
+TEMPLATES_DIR="$HOME/.local/share/project-templates"
+SCRIPT_NAME="$(basename "$0")"
+
+# --- Defaults ---
+VISIBILITY="private"
+CATALOG=""
+SKIP_CONFIRM=false
+
+usage() {
+    cat <<EOF
+Usage: $SCRIPT_NAME <project-directory> [options]
+
+Options:
+  --catalog <name>   Unity Catalog name for this project (prompted if omitted)
+  --public           Create a public GitHub repo (default: private)
+  --help             Show this help message
+
+Examples:
+  $SCRIPT_NAME ~/dev/my-project
+  $SCRIPT_NAME ~/dev/my-project --catalog analytics
+  $SCRIPT_NAME ~/dev/my-project --catalog analytics --public
+EOF
+    exit 0
+}
+
+log()  { echo "  ✓ $*"; }
+warn() { echo "  ⚠ $*" >&2; }
+die()  { echo "  ✗ $*" >&2; exit 1; }
+
+# Portable in-place sed (macOS uses `sed -i ''`, GNU/Linux uses `sed -i`)
+sed_inplace() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+
+# --- Parse Arguments ---
+PROJECT_DIR=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --public)   VISIBILITY="public"; shift ;;
+        --catalog)  CATALOG="$2"; shift 2 ;;
+        --yes|-y)   SKIP_CONFIRM=true; shift ;;
+        --help|-h)  usage ;;
+        -*)         die "Unknown option: $1" ;;
+        *)          PROJECT_DIR="$1"; shift ;;
+    esac
+done
+
+[[ -z "$PROJECT_DIR" ]] && die "Project directory required. Run: $SCRIPT_NAME --help"
+[[ -d "$PROJECT_DIR" ]] || die "Directory not found: $PROJECT_DIR"
+
+PROJECT_NAME="$(basename "$PROJECT_DIR")"
+cd "$PROJECT_DIR"
+
+echo ""
+echo "🚀 Initializing GitHub project: $PROJECT_NAME"
+echo "   Directory: $PROJECT_DIR"
+echo ""
+
+# =============================================================================
+# Step 1: Validate prerequisites
+# =============================================================================
+
+echo "── Validating prerequisites ──"
+
+# Check gh CLI
+command -v gh &>/dev/null || die "gh CLI not found. Install: brew install gh"
+
+# Check gh auth
+gh auth status &>/dev/null 2>&1 || die "Not authenticated. Run: gh auth login"
+
+# Get GitHub username
+GH_USER=$(gh api user --jq .login 2>/dev/null) || die "Cannot detect GitHub username"
+log "GitHub user: $GH_USER"
+
+# Check project scope (needed for Projects v2)
+# Note: 'read:project' is read-only — we need full 'project' scope for create/update
+GH_SCOPES=$(gh auth status 2>&1 | grep "Token scopes" || true)
+if echo "$GH_SCOPES" | grep -q "'project'"; then
+    HAS_PROJECT_SCOPE=true
+    log "Projects v2 scope: available (read+write)"
+elif echo "$GH_SCOPES" | grep -q "read:project"; then
+    warn "Token has 'read:project' (read-only) — need full 'project' scope for board creation"
+    warn "To fix: gh auth refresh -s project"
+    HAS_PROJECT_SCOPE=false
+else
+    warn "Missing 'project' scope — Projects v2 board will be skipped"
+    warn "To enable: gh auth refresh -s project"
+    HAS_PROJECT_SCOPE=false
+fi
+
+# Check git repo exists
+[[ -d .git ]] || die "Not a git repository: $PROJECT_DIR"
+log "Git repository: found"
+
+# Check no remote repo already exists
+if gh repo view "$GH_USER/$PROJECT_NAME" &>/dev/null 2>&1; then
+    die "GitHub repo already exists: $GH_USER/$PROJECT_NAME"
+fi
+log "Repo name available: $GH_USER/$PROJECT_NAME"
+
+# =============================================================================
+# Step 2: Get Databricks config — ALWAYS confirm workspace
+# =============================================================================
+
+echo ""
+echo "── Databricks configuration ──"
+
+DBX_PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+DBX_CFG="$HOME/.databrickscfg"
+
+# Extract workspace URL and token from profile
+DBX_HOST=$(awk -v p="[$DBX_PROFILE]" '
+    $0 == p { found=1; next }
+    /^\[/ { found=0 }
+    found && /^host/ { gsub(/^host[ ]*=[ ]*/, ""); print; exit }
+' "$DBX_CFG" 2>/dev/null)
+
+DBX_TOKEN=$(awk -v p="[$DBX_PROFILE]" '
+    $0 == p { found=1; next }
+    /^\[/ { found=0 }
+    found && /^token/ { gsub(/^token[ ]*=[ ]*/, ""); print; exit }
+' "$DBX_CFG" 2>/dev/null)
+
+# Extract catalog from profile (used as fallback if --catalog not provided)
+DBX_CATALOG=$(awk -v p="[$DBX_PROFILE]" '
+    $0 == p { found=1; next }
+    /^\[/ { found=0 }
+    found && /^catalog/ { gsub(/^catalog[ ]*=[ ]*/, ""); print; exit }
+' "$DBX_CFG" 2>/dev/null)
+
+if [[ -z "$DBX_HOST" ]]; then
+    die "Cannot find host for profile '$DBX_PROFILE' in ~/.databrickscfg"
+fi
+
+# Show workspace and require confirmation
+echo ""
+echo "  ┌─────────────────────────────────────────────────────┐"
+echo "  │  Databricks Workspace Confirmation                   │"
+echo "  ├─────────────────────────────────────────────────────┤"
+printf "  │  Profile:   %-40s│\n" "$DBX_PROFILE"
+printf "  │  Workspace: %-40s│\n" "$DBX_HOST"
+echo "  └─────────────────────────────────────────────────────┘"
+echo ""
+
+if [[ "$SKIP_CONFIRM" == "true" ]]; then
+    log "Workspace auto-confirmed (--yes): $DBX_HOST"
+else
+    read -rp "  Proceed with this workspace? [Y/n/switch] " confirm
+    case "${confirm:-Y}" in
+        [Yy]|"")
+            log "Workspace confirmed: $DBX_HOST"
+            ;;
+        switch|s)
+            echo ""
+            echo "  Available profiles:"
+            awk '/^\[/ { gsub(/[\[\]]/, ""); name=$0 }
+                 /^host/ { gsub(/^host[ ]*=[ ]*/, ""); printf "    %-22s %s\n", name, $0 }' "$DBX_CFG" 2>/dev/null
+            echo ""
+            read -rp "  Enter profile name: " new_profile
+            if ! grep -q "^\[$new_profile\]" "$DBX_CFG" 2>/dev/null; then
+                die "Profile not found: $new_profile"
+            fi
+            DBX_PROFILE="$new_profile"
+            export DATABRICKS_CONFIG_PROFILE="$new_profile"
+            DBX_HOST=$(awk -v p="[$new_profile]" '
+                $0 == p { found=1; next }
+                /^\[/ { found=0 }
+                found && /^host/ { gsub(/^host[ ]*=[ ]*/, ""); print; exit }
+            ' "$DBX_CFG" 2>/dev/null)
+            log "Switched to profile: $DBX_PROFILE ($DBX_HOST)"
+            ;;
+        *)
+            die "Aborted. Switch profile first: dbx-profile use <name>"
+            ;;
+    esac
+fi
+
+# Resolve catalog: --catalog flag → profile config → prompt
+if [[ -z "$CATALOG" && -n "$DBX_CATALOG" ]]; then
+    CATALOG="$DBX_CATALOG"
+    log "Unity Catalog: $CATALOG (from profile '$DBX_PROFILE')"
+elif [[ -z "$CATALOG" ]]; then
+    echo ""
+    read -rp "  Enter Unity Catalog name for this project: " CATALOG
+    [[ -z "$CATALOG" ]] && die "Catalog name is required"
+    log "Unity Catalog: $CATALOG"
+else
+    log "Unity Catalog: $CATALOG"
+fi
+
+# Validate catalog exists and check storage type
+CATALOG_INFO=$(databricks catalogs get "$CATALOG" --profile "$DBX_PROFILE" 2>/dev/null) || true
+CATALOG_CHECK=$(echo "$CATALOG_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('name',''))" 2>/dev/null) || true
+CATALOG_STORAGE=$(echo "$CATALOG_INFO" | python3 -c "import sys,json; print(json.load(sys.stdin).get('storage_root',''))" 2>/dev/null) || true
+
+if [[ -n "$CATALOG_CHECK" ]]; then
+    log "Catalog verified: '$CATALOG' exists in workspace"
+    if [[ -n "$CATALOG_STORAGE" && "$CATALOG_STORAGE" == *"dbstorage-prod-"* ]]; then
+        warn "Catalog '$CATALOG' uses metastore default storage"
+        warn "Zerobus Ingest cannot write to default-storage catalogs (Error 4024)"
+        warn "SDP pipelines work fine — only Zerobus is affected."
+        warn "If using Zerobus, choose a catalog with a dedicated S3/ADLS bucket."
+    else
+        log "Catalog storage: dedicated bucket (Zerobus compatible)"
+    fi
+elif [[ -z "$CATALOG_CHECK" ]]; then
+    warn "Could not verify catalog '$CATALOG' — ensure it exists before running pipelines"
+fi
+
+# =============================================================================
+# Step 3: Patch .gitignore
+# =============================================================================
+
+echo ""
+echo "── Patching .gitignore ──"
+
+if [[ -f .gitignore ]]; then
+    # Check if patches already exist
+    if ! grep -q '!\.claude/commands/' .gitignore 2>/dev/null; then
+        # Replace '.claude/' with '.claude/*' so exceptions can override
+        # (git can't un-ignore files inside an ignored directory, only inside ignored contents)
+        sed_inplace 's|^\.claude/$|.claude/*|' .gitignore
+        cat >> .gitignore <<'GITIGNORE'
+
+# Allow Claude commands, agents, and project config to be version-controlled
+!.claude/commands/
+!.claude/agents/
+!.claude/CLAUDE.md
+GITIGNORE
+        log "Patched .gitignore with .claude/ exceptions"
+    else
+        log ".gitignore already patched"
+    fi
+else
+    # Create a .gitignore with sensible defaults
+    cat > .gitignore <<'GITIGNORE'
+# ── AI Dev Kit (regenerate: bash <(curl -sL .../ai-dev-kit/main/install.sh)) ──
+.agents/
+.ai-dev-kit/
+.codex/
+.mcp.json
+
+# ── Claude Code ──
+.claude/*
+!.claude/commands/
+!.claude/agents/
+!.claude/CLAUDE.md
+
+# ── Python ──
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# ── IDE ──
+.idea/
+.vscode/
+
+# ── OS ──
+.DS_Store
+GITIGNORE
+    log "Created .gitignore with ai-dev-kit + Claude exceptions"
+fi
+
+# =============================================================================
+# Step 4: Copy GitHub templates
+# =============================================================================
+
+echo ""
+echo "── Setting up GitHub templates ──"
+
+mkdir -p .github/ISSUE_TEMPLATE
+
+# PR template
+cp "$TEMPLATES_DIR/github/pull_request_template.md" .github/pull_request_template.md
+log "PR template"
+
+# Issue templates
+cp "$TEMPLATES_DIR/github/ISSUE_TEMPLATE/config.yml" .github/ISSUE_TEMPLATE/config.yml
+cp "$TEMPLATES_DIR/github/ISSUE_TEMPLATE/bug_report.md" .github/ISSUE_TEMPLATE/bug_report.md
+cp "$TEMPLATES_DIR/github/ISSUE_TEMPLATE/feature_request.md" .github/ISSUE_TEMPLATE/feature_request.md
+cp "$TEMPLATES_DIR/github/ISSUE_TEMPLATE/task.md" .github/ISSUE_TEMPLATE/task.md
+log "Issue templates (bug, feature, task)"
+
+# CODEOWNERS — replace placeholder with actual username
+cp "$TEMPLATES_DIR/github/CODEOWNERS" .github/CODEOWNERS
+sed_inplace "s/GH_USER/$GH_USER/g" .github/CODEOWNERS
+log "CODEOWNERS → @$GH_USER"
+
+# =============================================================================
+# Step 5: Copy CI/CD workflow
+# =============================================================================
+
+mkdir -p .github/workflows
+cp "$TEMPLATES_DIR/github/workflows/deploy.yml" .github/workflows/deploy.yml
+log "CI/CD workflow (deploy.yml)"
+
+# =============================================================================
+# Step 6: Copy and configure databricks.yml
+# =============================================================================
+
+echo ""
+echo "── Setting up Databricks Asset Bundle ──"
+
+cp "$TEMPLATES_DIR/databricks/databricks.yml" databricks.yml
+sed_inplace "s/PROJECT_NAME/$PROJECT_NAME/g" databricks.yml
+sed_inplace "s/PROJECT_CATALOG/$CATALOG/g" databricks.yml
+sed_inplace "s/DATABRICKS_PROFILE/$DBX_PROFILE/g" databricks.yml
+log "databricks.yml → bundle: $PROJECT_NAME, catalog: $CATALOG"
+
+# =============================================================================
+# Step 7: Generate README.md
+# =============================================================================
+
+cp "$TEMPLATES_DIR/README.md" README.md
+sed_inplace "s/PROJECT_NAME/$PROJECT_NAME/g" README.md
+sed_inplace "s/PROJECT_CATALOG/$CATALOG/g" README.md
+log "README.md → $PROJECT_NAME, catalog: $CATALOG"
+
+# =============================================================================
+# Step 7a: Create resources directory
+# =============================================================================
+
+mkdir -p resources
+touch resources/.gitkeep
+log "resources/ directory for DAB definitions"
+
+# =============================================================================
+# Step 8: Copy infrastructure setup script
+# =============================================================================
+
+mkdir -p scripts
+cp "$TEMPLATES_DIR/scripts/01_setup_infrastructure.py" scripts/01_setup_infrastructure.py
+sed_inplace "s/PROJECT_CATALOG/$CATALOG/g" scripts/01_setup_infrastructure.py
+log "scripts/01_setup_infrastructure.py → catalog: $CATALOG"
+
+cp "$TEMPLATES_DIR/ingest/compile_proto.sh" scripts/compile_proto.sh
+chmod +x scripts/compile_proto.sh
+log "scripts/compile_proto.sh → protobuf compiler helper"
+
+# =============================================================================
+# Step 9: Copy Claude slash commands
+# =============================================================================
+
+echo ""
+echo "── Setting up Claude commands & agents ──"
+
+mkdir -p .claude/commands
+cp "$TEMPLATES_DIR/commands/plan.md" .claude/commands/plan.md
+cp "$TEMPLATES_DIR/commands/ship.md" .claude/commands/ship.md
+cp "$TEMPLATES_DIR/commands/demo-prep.md" .claude/commands/demo-prep.md
+cp "$TEMPLATES_DIR/commands/techdebt.md" .claude/commands/techdebt.md
+cp "$TEMPLATES_DIR/commands/customer-review.md" .claude/commands/customer-review.md
+cp "$TEMPLATES_DIR/commands/ingest-init.md" .claude/commands/ingest-init.md
+cp "$TEMPLATES_DIR/commands/resume.md" .claude/commands/resume.md
+log "Slash commands: /plan, /ship, /demo-prep, /techdebt, /customer-review, /ingest-init, /resume"
+
+# =============================================================================
+# Step 10: Copy Claude subagents
+# =============================================================================
+
+mkdir -p .claude/agents
+cp "$TEMPLATES_DIR/agents/security-reviewer.md" .claude/agents/security-reviewer.md
+cp "$TEMPLATES_DIR/agents/dbx-validator.md" .claude/agents/dbx-validator.md
+log "Agents: security-reviewer, dbx-validator"
+
+# =============================================================================
+# Step 10a: Merge permissions into .claude/settings.json
+# =============================================================================
+
+# The AI Dev Kit installer creates settings.json with hooks.
+# We merge in our permissions block so Claude doesn't prompt for every command.
+if [[ -f .claude/settings.json ]]; then
+    python3 -c "
+import json
+with open('.claude/settings.json') as f:
+    config = json.load(f)
+with open('$TEMPLATES_DIR/settings.json') as f:
+    perms = json.load(f)
+config['permissions'] = perms.get('permissions', {})
+with open('.claude/settings.json', 'w') as f:
+    json.dump(config, f, indent=2)
+    f.write('\n')
+" 2>/dev/null
+    log ".claude/settings.json → merged permissions (git, gh, databricks, python, mcp)"
+else
+    cp "$TEMPLATES_DIR/settings.json" .claude/settings.json
+    log ".claude/settings.json → created with permissions"
+fi
+
+# =============================================================================
+# Step 10b: Patch .mcp.json — remove defer_loading, ensure correct profile
+# =============================================================================
+
+if [[ -f .mcp.json ]]; then
+    # Remove defer_loading so MCP server starts with Claude Code session
+    # (defer_loading prevents tool discovery → Claude says "MCP not configured")
+    python3 -c "
+import json, sys
+with open('.mcp.json') as f:
+    config = json.load(f)
+changed = False
+for name, server in config.get('mcpServers', {}).items():
+    if 'defer_loading' in server:
+        del server['defer_loading']
+        changed = True
+    env = server.get('env', {})
+    if env.get('DATABRICKS_CONFIG_PROFILE') != '$DBX_PROFILE':
+        env['DATABRICKS_CONFIG_PROFILE'] = '$DBX_PROFILE'
+        server['env'] = env
+        changed = True
+if changed:
+    with open('.mcp.json', 'w') as f:
+        json.dump(config, f, indent=2)
+        f.write('\n')
+" 2>/dev/null
+    log ".mcp.json → removed defer_loading, profile: $DBX_PROFILE"
+else
+    log "No .mcp.json found — ai-dev-kit installer may not have created one"
+fi
+
+# =============================================================================
+# Step 11: Create standard directories
+# =============================================================================
+
+mkdir -p src tests
+[[ -f src/.gitkeep ]] || touch src/.gitkeep
+[[ -f tests/.gitkeep ]] || touch tests/.gitkeep
+log "Standard directories: src/, tests/"
+
+# =============================================================================
+# Step 12: Generate project CLAUDE.md
+# =============================================================================
+
+cp "$TEMPLATES_DIR/CLAUDE.md" .claude/CLAUDE.md
+sed_inplace "s/PROJECT_NAME/$PROJECT_NAME/g" .claude/CLAUDE.md
+sed_inplace "s/PROJECT_CATALOG/$CATALOG/g" .claude/CLAUDE.md
+sed_inplace "s/DATABRICKS_PROFILE/$DBX_PROFILE/g" .claude/CLAUDE.md
+log ".claude/CLAUDE.md → project: $PROJECT_NAME"
+
+# =============================================================================
+# Step 13: Initial commit
+# =============================================================================
+
+echo ""
+echo "── Creating initial commit ──"
+
+git add -A
+git commit -m "chore: initialize project with GitHub templates, DAB config, and Claude commands" --quiet
+log "Initial commit created"
+
+# =============================================================================
+# Step 14: Create GitHub repo
+# =============================================================================
+
+echo ""
+echo "── Creating GitHub repository ──"
+
+gh repo create "$PROJECT_NAME" --"$VISIBILITY" --source=. --push
+log "GitHub repo: https://github.com/$GH_USER/$PROJECT_NAME ($VISIBILITY)"
+
+# =============================================================================
+# Step 15: Configure labels
+# =============================================================================
+
+echo ""
+echo "── Configuring labels ──"
+
+# Remove default GitHub labels
+for label in "bug" "documentation" "duplicate" "enhancement" "good first issue" \
+    "help wanted" "invalid" "question" "wontfix"; do
+    gh label delete "$label" --yes 2>/dev/null || true
+done
+log "Removed default labels"
+
+# Create custom labels
+# Priority
+gh label create "priority:P0" --color "CE2C31" --description "Must have for MVP" --force 2>/dev/null
+gh label create "priority:P1" --color "FFDB44" --description "Important but not blocking" --force 2>/dev/null
+gh label create "priority:P2" --color "AAAAAA" --description "Nice to have" --force 2>/dev/null
+
+# Phase
+gh label create "phase:infra" --color "555555" --description "Infrastructure & repo setup" --force 2>/dev/null
+gh label create "phase:data" --color "1D76DB" --description "Data generation & pipeline tasks" --force 2>/dev/null
+gh label create "phase:ml" --color "FF6B35" --description "ML model tasks" --force 2>/dev/null
+gh label create "phase:dashboard" --color "7B61FF" --description "AI/BI dashboard tasks" --force 2>/dev/null
+gh label create "phase:app" --color "17D382" --description "Web app / frontend tasks" --force 2>/dev/null
+gh label create "phase:docs" --color "0075ca" --description "Documentation" --force 2>/dev/null
+
+# Type
+gh label create "type:feature" --color "a2eeef" --description "New feature" --force 2>/dev/null
+gh label create "type:bug" --color "d73a4a" --description "Something broken" --force 2>/dev/null
+gh label create "type:refactor" --color "e6e6e6" --description "Code improvement" --force 2>/dev/null
+
+# Status
+gh label create "status:blocked" --color "b60205" --description "Blocked by dependency" --force 2>/dev/null
+
+log "Created 13 custom labels (priority, phase, type, status)"
+
+# =============================================================================
+# Step 16: Create GitHub Projects v2 board
+# =============================================================================
+
+if [[ "$HAS_PROJECT_SCOPE" == "true" ]]; then
+    echo ""
+    echo "── Creating Projects v2 board ──"
+
+    # Use GraphQL API directly — `gh project create` has a known bug in gh 2.87+
+    GH_USER_ID=$(gh api graphql -f query='query { viewer { id } }' --jq '.data.viewer.id' 2>/dev/null) || true
+
+    if [[ -n "$GH_USER_ID" ]]; then
+        PROJECT_RESULT=$(gh api graphql -f query="mutation { createProjectV2(input: {ownerId: \"$GH_USER_ID\", title: \"$PROJECT_NAME\"}) { projectV2 { number url } } }" 2>/dev/null) || true
+
+        PROJECT_NUMBER=$(echo "$PROJECT_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['createProjectV2']['projectV2']['number'])" 2>/dev/null) || true
+        PROJECT_URL=$(echo "$PROJECT_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['createProjectV2']['projectV2']['url'])" 2>/dev/null) || true
+    fi
+
+    if [[ -n "${PROJECT_NUMBER:-}" ]]; then
+        # Store project number
+        echo "$PROJECT_NUMBER" > .github/.project-number
+        git add .github/.project-number
+        git commit -m "chore: add project board number" --quiet
+        git push --quiet
+
+        # Link board to repo so it appears in the repo's Projects tab
+        REPO_ID=$(gh api graphql -f query="query { repository(owner: \"$GH_USER\", name: \"$PROJECT_NAME\") { id } }" --jq '.data.repository.id' 2>/dev/null) || true
+        PROJECT_ID=$(echo "$PROJECT_RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['createProjectV2']['projectV2']['id'])" 2>/dev/null) || true
+        if [[ -n "${REPO_ID:-}" && -n "${PROJECT_ID:-}" ]]; then
+            gh api graphql -f query="mutation { linkProjectV2ToRepository(input: {projectId: \"$PROJECT_ID\", repositoryId: \"$REPO_ID\"}) { repository { name } } }" >/dev/null 2>&1 || true
+            log "Board linked to repo (visible in repo Projects tab)"
+        fi
+
+        log "Projects v2 board: $PROJECT_URL"
+        log "Project number stored in .github/.project-number"
+    else
+        warn "Could not create Projects v2 board — you can create one manually"
+        warn "To create manually: gh project create --owner @me --title \"$PROJECT_NAME\""
+    fi
+else
+    warn "Projects v2 board skipped (missing scope)"
+fi
+
+# =============================================================================
+# Summary
+# =============================================================================
+
+echo ""
+echo "═══════════════════════════════════════════════"
+echo "  ✅ Project initialized: $PROJECT_NAME"
+echo "═══════════════════════════════════════════════"
+echo ""
+echo "  Repo:       https://github.com/$GH_USER/$PROJECT_NAME"
+[[ -n "${PROJECT_URL:-}" ]] && echo "  Board:      $PROJECT_URL"
+echo "  Catalog:    $CATALOG"
+echo "  Profile:    $DBX_PROFILE"
+echo "  Visibility: $VISIBILITY"
+echo ""
+# Auto-set GitHub secrets from Databricks profile
+if [[ -n "$DBX_HOST" && -n "$DBX_TOKEN" ]]; then
+  echo "$DBX_HOST" | gh secret set DATABRICKS_HOST --repo "$GH_USER/$PROJECT_NAME" 2>/dev/null \
+    && echo "  ✓ Secret: DATABRICKS_HOST" \
+    || echo "  ⚠ Failed to set DATABRICKS_HOST secret"
+  echo "$DBX_TOKEN" | gh secret set DATABRICKS_TOKEN --repo "$GH_USER/$PROJECT_NAME" 2>/dev/null \
+    && echo "  ✓ Secret: DATABRICKS_TOKEN" \
+    || echo "  ⚠ Failed to set DATABRICKS_TOKEN secret"
+else
+  echo "  ⚠ No token found for profile '$DBX_PROFILE' — set secrets manually:"
+  echo "    gh secret set DATABRICKS_HOST --body \"$DBX_HOST\""
+  echo "    gh secret set DATABRICKS_TOKEN --body \"dapi...\""
+fi
+echo ""
+echo "  Next steps:"
+echo "    1. Run /plan to break down your use case into issues"
+echo "    2. Run /ship when ready to commit and create a PR"
+echo ""

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# claude-todo-hook - Injected into Claude's context at session start.
+# Reads GitHub issues + TODO.md and prints a structured summary.
+# Claude will see this output automatically before your first message.
+
+set -euo pipefail
+
+OUTPUT=""
+
+# ── GitHub Issues ──────────────────────────────────────────────────────────────
+if command -v gh &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
+  REMOTE_URL="$(git remote get-url origin 2>/dev/null || echo "")"
+  if [[ "$REMOTE_URL" == *"github.com"* ]]; then
+    ISSUES="$(gh issue list --state open --limit 20 --json number,title,labels,assignees \
+      --template '{{range .}}#{{.number}} {{.title}}{{"\n"}}{{end}}' 2>/dev/null || echo "")"
+
+    if [[ -n "$ISSUES" ]]; then
+      OUTPUT="${OUTPUT}## Open GitHub Issues\n${ISSUES}\n"
+    else
+      OUTPUT="${OUTPUT}## Open GitHub Issues\nNo open issues.\n\n"
+    fi
+  fi
+fi
+
+# ── TODO.md ────────────────────────────────────────────────────────────────────
+for TODO_FILE in TODO.md TODO todo.md TASKS.md tasks.md; do
+  if [[ -f "$TODO_FILE" ]]; then
+    OUTPUT="${OUTPUT}## ${TODO_FILE}\n$(cat "$TODO_FILE")\n\n"
+    break
+  fi
+done
+
+# ── Inline TODO comments in code ───────────────────────────────────────────────
+if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
+  CODE_TODOS="$(git grep -n "TODO\|FIXME\|HACK\|XXX" \
+    -- '*.py' '*.ts' '*.js' '*.sql' '*.sh' '*.go' \
+    2>/dev/null | head -20 || echo "")"
+
+  if [[ -n "$CODE_TODOS" ]]; then
+    OUTPUT="${OUTPUT}## TODO/FIXME comments in code\n\`\`\`\n${CODE_TODOS}\n\`\`\`\n\n"
+  fi
+fi
+
+# ── Only print if there's something to show ────────────────────────────────────
+if [[ -n "$OUTPUT" ]]; then
+  echo -e "# Project Context — Work Items\n"
+  echo -e "$OUTPUT"
+  echo -e "---\n_Review the above and be ready to work on any of these items when asked._"
+fi

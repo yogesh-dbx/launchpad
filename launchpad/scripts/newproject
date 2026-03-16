@@ -1,0 +1,318 @@
+#!/usr/bin/env bash
+# newproject - Create a new project, install AI Dev Kit, and launch Ghostty + Claude Code
+set -euo pipefail
+
+# ── Colors ────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+log()    { echo -e "${CYAN}▶${RESET} $*"; }
+ok()     { echo -e "${GREEN}✓${RESET} $*"; }
+warn()   { echo -e "${YELLOW}⚠${RESET}  $*"; }
+die()    { echo -e "${RED}✗${RESET} $*" >&2; exit 1; }
+
+# ── Usage ─────────────────────────────────────────────────────────────────────
+usage() {
+  echo -e "${BOLD}Usage:${RESET}  newproject <project-name>"
+  echo ""
+  echo -e "${BOLD}Example:${RESET}"
+  echo "  newproject my-databricks-app"
+  echo ""
+  echo "Creates ~/dev/<project-name>, installs the Databricks AI Dev Kit,"
+  echo "then opens Ghostty with Claude Code running in the new project."
+  exit 1
+}
+
+# ── Validate args ──────────────────────────────────────────────────────────────
+[[ $# -lt 1 ]] && usage
+[[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && usage
+
+PROJECT_NAME="$1"
+
+# Project name must be non-empty, no slashes, no leading dots
+if [[ -z "$PROJECT_NAME" ]]; then
+  die "Project name cannot be empty."
+fi
+if [[ "$PROJECT_NAME" =~ [/\\] ]]; then
+  die "Project name cannot contain slashes."
+fi
+if [[ "$PROJECT_NAME" =~ ^[[:space:]] || "$PROJECT_NAME" =~ [[:space:]]$ ]]; then
+  die "Project name cannot start or end with spaces. Use hyphens instead."
+fi
+
+# ── Resolve paths ──────────────────────────────────────────────────────────────
+DEV_DIR="$HOME/dev"
+PROJECT_DIR="$DEV_DIR/$PROJECT_NAME"
+
+if [[ -e "$PROJECT_DIR" ]]; then
+  die "Directory already exists: $PROJECT_DIR"
+fi
+
+# ── Check Ghostty (only required when not running inside VS Code/Cursor) ───────
+GHOSTTY_BIN="/Applications/Ghostty.app/Contents/MacOS/ghostty"
+if [[ "${TERM_PROGRAM:-}" != "vscode" && ! -x "$GHOSTTY_BIN" ]]; then
+  die "Ghostty not found at $GHOSTTY_BIN\n  Install it from: https://ghostty.org/download"
+fi
+
+# ── Check claude ───────────────────────────────────────────────────────────────
+if ! command -v claude &>/dev/null; then
+  die "'claude' CLI not found in PATH. Install Claude Code first:\n  npm install -g @anthropic-ai/claude-code"
+fi
+CLAUDE_BIN="$(command -v claude)"
+
+# ── Create project directory ───────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}newproject${RESET} — setting up ${CYAN}$PROJECT_NAME${RESET}"
+echo "──────────────────────────────────────────────"
+log "Creating $PROJECT_DIR"
+mkdir -p "$PROJECT_DIR"
+ok "Directory created"
+
+# ── Run AI Dev Kit installer ───────────────────────────────────────────────────
+echo ""
+log "Running Databricks AI Dev Kit installer..."
+echo -e "  ${YELLOW}(Running silently with default settings)${RESET}"
+echo ""
+
+# The installer must run in the project directory.
+# All options passed via env vars to avoid interactive prompts.
+(
+  cd "$PROJECT_DIR"
+  DEVKIT_PROFILE=DEFAULT \
+  DEVKIT_SCOPE=project \
+  DEVKIT_TOOLS=claude,cursor,copilot \
+  DEVKIT_MCP_PATH="$HOME/.ai-dev-kit" \
+  DEVKIT_SILENT=true \
+    bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)
+) || {
+  warn "AI Dev Kit installer exited with errors. The project directory has been kept."
+  warn "Re-run manually: cd $PROJECT_DIR && bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)"
+}
+
+# ── Create .claude/settings.local.json if missing ────────────────────────────
+CLAUDE_SETTINGS="$PROJECT_DIR/.claude/settings.local.json"
+if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
+  log "Creating .claude/settings.local.json with Databricks MCP permissions..."
+  mkdir -p "$PROJECT_DIR/.claude"
+  cat > "$CLAUDE_SETTINGS" <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(env)",
+      "Bash(find:*)",
+      "mcp__databricks__run_python_file_on_databricks",
+      "mcp__databricks__execute_sql",
+      "mcp__databricks__upload_file",
+      "mcp__databricks__create_or_update_pipeline",
+      "Bash(databricks auth:*)",
+      "mcp__databricks__start_update",
+      "mcp__databricks__get_update",
+      "mcp__databricks__get_pipeline_events",
+      "mcp__databricks__get_pipeline",
+      "Bash(databricks workspace export:*)",
+      "Bash(databricks workspace ls:*)",
+      "Bash(databricks workspace list:*)",
+      "mcp__databricks__delete_pipeline",
+      "Bash(databricks workspace delete:*)",
+      "mcp__databricks__upload_folder",
+      "mcp__databricks__execute_sql_multi",
+      "Bash(ls:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(xargs:*)",
+      "Bash(git fetch:*)",
+      "Bash(git clone:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(sudo *)",
+      "Bash(mkfs*)",
+      "Bash(dd if=*)",
+      "Bash(chmod -R 777*)"
+    ],
+    "ask": [
+      "Bash(git push --force*)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean -f*)",
+      "Bash(git branch -D *)",
+      "Bash(npm publish*)",
+      "Bash(docker *)",
+      "Bash(kubectl delete*)"
+    ]
+  },
+  "plansDirectory": ".claude/plans",
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "databricks"
+  ],
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-todo-hook"
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
+  ok ".claude/settings.local.json created"
+else
+  ok ".claude/settings.local.json already exists, skipping"
+fi
+
+# ── Create CLAUDE.md if missing ───────────────────────────────────────────────
+CLAUDE_MD="$PROJECT_DIR/CLAUDE.md"
+if [[ ! -f "$CLAUDE_MD" ]]; then
+  log "Creating CLAUDE.md to activate project skills..."
+  # Use $PROJECT_NAME variable inside the heredoc via a different delimiter
+  cat > "$CLAUDE_MD" <<HEREDOC
+# ${PROJECT_NAME}
+
+## Project Purpose
+[Describe what this project does]
+
+## Notes
+- Add any project-specific conventions, data sources, or context here
+HEREDOC
+  ok "CLAUDE.md created"
+else
+  ok "CLAUDE.md already exists, skipping"
+fi
+
+# ── Create .vscode/tasks.json (auto-launch claude on folder open) ────────────
+VSCODE_TASKS="$PROJECT_DIR/.vscode/tasks.json"
+if [[ ! -f "$VSCODE_TASKS" ]]; then
+  log "Creating .vscode/tasks.json to auto-launch Claude Code..."
+  mkdir -p "$PROJECT_DIR/.vscode"
+  cat > "$VSCODE_TASKS" <<'EOF'
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Launch Claude Code",
+      "type": "shell",
+      "command": "claude",
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "focus": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}
+EOF
+  ok ".vscode/tasks.json created"
+else
+  ok ".vscode/tasks.json already exists, skipping"
+fi
+
+# ── Create .vscode/settings.json (ensure login shell so PATH is fully loaded) ─
+VSCODE_SETTINGS="$PROJECT_DIR/.vscode/settings.json"
+if [[ ! -f "$VSCODE_SETTINGS" ]]; then
+  log "Creating .vscode/settings.json..."
+  cat > "$VSCODE_SETTINGS" <<'EOF'
+{
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "terminal.integrated.profiles.osx": {
+    "zsh": {
+      "path": "/bin/zsh",
+      "args": ["-l"]
+    }
+  }
+}
+EOF
+  ok ".vscode/settings.json created"
+else
+  ok ".vscode/settings.json already exists, skipping"
+fi
+
+# ── Create .cursor/rules if missing ──────────────────────────────────────────
+CURSOR_RULES="$PROJECT_DIR/.cursor/rules"
+if [[ ! -f "$CURSOR_RULES" ]]; then
+  log "Creating .cursor/rules for Cursor context..."
+  mkdir -p "$PROJECT_DIR/.cursor"
+  cat > "$CURSOR_RULES" <<'EOF'
+You are helping a Databricks developer.
+
+This project has Databricks-specific skills in `.claude/skills/`. Always use these as the primary reference for Databricks tasks — prefer them over general training knowledge.
+
+Available skills:
+- `agent-evaluation` — Evaluate, improve, or optimize an existing LLM agent
+- `analyze-mlflow-chat-session` — Analyze an MLflow multi-turn chat session
+- `analyze-mlflow-trace` — Analyze a single MLflow trace
+- `databricks-agent-bricks` — Knowledge Assistants, Genie Spaces, Supervisor Agents
+- `databricks-aibi-dashboards` — Create and manage AI/BI dashboards
+- `databricks-app-apx` — APX framework (FastAPI + React) on Databricks
+- `databricks-app-python` — Streamlit, Dash, Flask, Gradio apps on Databricks
+- `databricks-asset-bundles` — DABs for deploying jobs, pipelines, apps
+- `databricks-config` — Workspace auth and Databricks Connect setup
+- `databricks-dbsql` — Databricks SQL and warehouse features
+- `databricks-docs` — Databricks documentation reference
+- `databricks-genie` — Genie Spaces for natural language SQL
+- `databricks-jobs` — Create, run, and manage Databricks Jobs
+- `databricks-metric-views` — Unity Catalog metric views
+- `databricks-model-serving` — Deploy and query model serving endpoints
+- `databricks-python-sdk` — Python SDK, Databricks Connect, CLI, REST API
+- `databricks-unity-catalog` — Unity Catalog system tables and volumes
+- `databricks-vector-search` — Vector Search endpoints and indexes
+- `databricks-zerobus-ingest` — Near real-time data ingestion
+- `instrumenting-with-mlflow-tracing` — MLflow tracing for Python and TypeScript
+- `mlflow-onboarding` — Getting started with MLflow
+- `querying-mlflow-metrics` — Fetch aggregated trace metrics
+- `retrieving-mlflow-traces` — Retrieve MLflow traces via CLI or Python
+- `searching-mlflow-docs` — Search MLflow documentation
+- `spark-python-data-source` — Custom Spark data source connectors
+
+## MCP Tools (Databricks MCP server configured in .cursor/mcp.json)
+- `databricks_execute_sql` — Run SQL against a warehouse
+- `databricks_run_python_file_on_databricks` — Run Python on a cluster
+- `databricks_upload_file` / `upload_folder` — Upload to workspace
+- `databricks_create_or_update_pipeline` / `start_update` / `get_update` — Manage DLT pipelines
+- `databricks_execute_sql_multi` — Run multiple SQL statements
+
+## Environment
+- Use `uv` for Python deps (`uv venv`, `uv pip install`)
+- Databricks CLI available: check auth with `databricks auth status`
+- Default profile: `DEFAULT`
+EOF
+  ok ".cursor/rules created"
+else
+  ok ".cursor/rules already exists, skipping"
+fi
+
+# ── Launch: detect environment and open appropriately ────────────────────────
+echo ""
+if [[ "${TERM_PROGRAM:-}" == "vscode" ]]; then
+  # Running inside VS Code or Cursor integrated terminal — stay here, just cd in
+  echo -e "${GREEN}${BOLD}All done!${RESET} Project ready. Run this to open it:\n"
+  echo -e "  ${CYAN}cd $PROJECT_DIR && claude${RESET}\n"
+  # Also print a clickable path hint for VS Code
+  echo -e "  Or open in VS Code: ${CYAN}code $PROJECT_DIR${RESET}"
+  echo -e "  Or open in Cursor:  ${CYAN}cursor $PROJECT_DIR${RESET}"
+else
+  # Running from Ghostty or another external terminal — open a new Ghostty window
+  log "Launching Ghostty with Claude Code in $PROJECT_DIR ..."
+  "$GHOSTTY_BIN" \
+    --working-directory="$PROJECT_DIR" \
+    --command="$CLAUDE_BIN" \
+    &
+  ok "Ghostty launched!"
+  echo ""
+  echo -e "${GREEN}${BOLD}All done!${RESET} Your project is ready at:"
+  echo -e "  ${CYAN}$PROJECT_DIR${RESET}"
+fi
+echo ""
