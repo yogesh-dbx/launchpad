@@ -18,8 +18,8 @@ The launchpad layer sits on top of the [Databricks AI Dev Kit](https://github.co
 ## Installation
 
 ```bash
-git clone https://github.com/yogesh-singh_data/ai-dev-kit-launchpad.git
-cd ai-dev-kit-launchpad
+git clone https://github.com/yogesh-singh_data/launchpad.git
+cd launchpad
 bash install-launchpad.sh
 ```
 
@@ -168,7 +168,7 @@ This updates the AI Dev Kit core, refreshes skills in every project under your d
 To update the launchpad itself (scripts, templates, hooks):
 
 ```bash
-cd ai-dev-kit-launchpad
+cd launchpad
 git pull
 bash install-launchpad.sh
 ```
