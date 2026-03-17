@@ -69,7 +69,6 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
   agents/                      # dbx-validator, security-reviewer
   databricks/                  # databricks.yml bundle template
   github/                      # Issue templates, PR template, CI workflow
-  ingest/                      # Zerobus producer template
   scripts/                     # Infrastructure setup scripts
 ```
 

@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(databricks:*), Bash(dbx-workspace-info:*), Bash(python*), Bash(uv:*), Bash(git:*), Bash(mkdir:*), Bash(cp:*), Bash(sed:*), Bash(chmod:*), Bash(ls:*), Bash(cat:*), Read, Write, Glob, Grep, mcp__databricks__execute_sql
+allowed-tools: Bash(databricks:*), Bash(dbx-workspace-info:*), Bash(python*), Bash(uv:*), Bash(git:*), Bash(mkdir:*), Bash(chmod:*), Bash(ls:*), Read, Write, Edit, Glob, Grep, Agent, mcp__databricks__execute_sql
 description: "Scaffold Zerobus ingest: proto, producer, config, .env — from a UC table"
 argument-hint: "<catalog.schema.table> (e.g., my_catalog.raw.events)"
 ---
@@ -15,8 +15,9 @@ You are an ingest scaffolding agent. Given a fully-qualified table name, you pro
 1. **Require a table name.** If no argument, ask: "Which table? (e.g., my_catalog.raw.events)". Do NOT proceed without one.
 2. **Never explore outside this project directory.** All work happens in `$(pwd)/src/ingest/`.
 3. **Never hardcode credentials.** All secrets come from environment variables.
-4. **Use templates, not invention.** Copy from `~/.local/share/project-templates/ingest/`, then patch placeholders.
-5. **Use `dbx-workspace-info` for workspace metadata.** Do NOT call multiple APIs to discover workspace ID, host, or region. One command: `eval "$(dbx-workspace-info)"`.
+4. **Generate files inline with Write tool.** Do NOT copy from external template directories.
+5. **Use `dbx-workspace-info` for workspace metadata.** One command: `eval "$(dbx-workspace-info)"`.
+6. **Refer to the `databricks-zerobus-ingest` skill** for SDK API details and best practices.
 
 ---
 
@@ -42,7 +43,7 @@ Save the column names and types for proto generation.
 
 ---
 
-## Phase 2: Generate Files (template + patch)
+## Phase 2: Generate Files
 
 ### 2a. Create directory
 ```bash
@@ -64,7 +65,7 @@ Map Delta types to Protobuf types:
 | BINARY | bytes |
 | ARRAY/MAP/STRUCT | string (JSON-serialized) |
 
-Create `src/ingest/<table>.proto`:
+Write `src/ingest/<table>.proto` using the Write tool:
 ```protobuf
 syntax = "proto3";
 
@@ -77,47 +78,60 @@ message <MessageName> {
 
 **Message name**: Convert table name to PascalCase. `player_events` → `PlayerEvent` (singular).
 
-### 2c. Compile proto
+### 2c. Generate compile_proto.sh and compile
+Write `scripts/compile_proto.sh`:
 ```bash
+#!/usr/bin/env bash
+set -euo pipefail
+PROTO_DIR="src/ingest"
+python -m grpc_tools.protoc -I="$PROTO_DIR" --python_out="$PROTO_DIR" "$PROTO_DIR"/*.proto
+echo "✓ Proto compiled"
+```
+Make it executable and install deps if needed:
+```bash
+chmod +x scripts/compile_proto.sh
+uv pip install grpcio-tools databricks-zerobus-ingest-sdk
 scripts/compile_proto.sh
 ```
-If the script doesn't exist, copy it from templates:
-```bash
-cp ~/.local/share/project-templates/ingest/compile_proto.sh scripts/compile_proto.sh
-chmod +x scripts/compile_proto.sh
-```
-If the venv doesn't have `grpcio-tools`, install it:
-```bash
-uv pip install grpcio-tools databricks-zerobus-ingest-sdk
-```
-Then compile.
 
-### 2d. Copy and patch config.py
-```bash
-cp ~/.local/share/project-templates/ingest/config.py src/ingest/config.py
-```
-Use the Edit tool to replace `INGEST_TABLE_NAME` with `<catalog>.<schema>.<table>` in `src/ingest/config.py`.
+### 2d. Generate config.py
+Write `src/ingest/config.py` with the Write tool:
+```python
+"""Zerobus ingest configuration — loaded from environment variables."""
+import os
 
-### 2e. Copy and patch .env.example
-```bash
-cp ~/.local/share/project-templates/ingest/env.example src/ingest/.env.example
+def get_config():
+    return {
+        "workspace_id": os.environ["ZEROBUS_WORKSPACE_ID"],
+        "region": os.environ.get("ZEROBUS_REGION", "us-east-1"),
+        "workspace_url": os.environ["ZEROBUS_WORKSPACE_URL"],
+        "client_id": os.environ["ZEROBUS_CLIENT_ID"],
+        "client_secret": os.environ["ZEROBUS_CLIENT_SECRET"],
+        "table_name": os.environ.get("ZEROBUS_TABLE_NAME", "<catalog>.<schema>.<table>"),
+    }
 ```
-Use the Edit tool to make the following replacements in `src/ingest/.env.example`:
-- Replace `INGEST_WORKSPACE_ID` with `$DBX_WORKSPACE_ID`
-- Replace `INGEST_REGION` with `$DBX_REGION`
-- Replace `INGEST_WORKSPACE_URL` with `$DBX_HOST`
-- Replace `INGEST_TABLE_NAME` with `<catalog>.<schema>.<table>`
+Replace `<catalog>.<schema>.<table>` with the actual table name.
 
-### 2f. Copy and patch producer.py
-```bash
-cp ~/.local/share/project-templates/ingest/producer.py src/ingest/producer.py
+### 2e. Generate .env.example
+Write `src/ingest/.env.example` with actual workspace values:
 ```
-Then replace placeholders:
-- `INGEST_PROTO_MODULE` → `<table>_pb2` (e.g., `player_events_pb2`)
-- `INGEST_MESSAGE_NAME` → PascalCase message name (e.g., `PlayerEvent`)
-- `INGEST_TABLE_NAME` → `<catalog>.<schema>.<table>`
+ZEROBUS_WORKSPACE_ID=<workspace_id>
+ZEROBUS_REGION=<region>
+ZEROBUS_WORKSPACE_URL=<host>
+ZEROBUS_TABLE_NAME=<catalog>.<schema>.<table>
+ZEROBUS_CLIENT_ID=<your-service-principal-client-id>
+ZEROBUS_CLIENT_SECRET=<your-service-principal-client-secret>
+```
 
-**Important:** The producer template has a TODO for event generation. Tell the user they need to wire up their datagen module. Do NOT invent a generator — that's a separate issue.
+### 2f. Generate producer.py
+Write `src/ingest/producer.py` using the Write tool. Include:
+- Import of `<table>_pb2` and `config`
+- `ZerobusSdk` initialization from config
+- `create_stream()` with `TableProperties`
+- A `send_event()` function that serializes a proto message and calls `ingest_record_offset` + `wait_for_offset`
+- A `# TODO: wire up your event generator here` marker in `__main__`
+
+**Important:** Do NOT invent a data generator — that's a separate issue. Just leave the TODO.
 
 ### 2g. Ensure .env is gitignored
 Check `.gitignore` for `.env`. If missing, add:
