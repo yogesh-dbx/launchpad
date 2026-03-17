@@ -173,6 +173,13 @@ TEMPLATES_DIR="$HOME/.local/share/project-templates"
 
 if [[ "$DO_GITHUB" == true ]]; then
   if command -v gh-project-init &>/dev/null; then
+    # gh-project-init expects a git repo — initialize if the AI Dev Kit didn't
+    if [[ ! -d "$PROJECT_DIR/.git" ]]; then
+      git -C "$PROJECT_DIR" init -b main --quiet
+      git -C "$PROJECT_DIR" add -A
+      git -C "$PROJECT_DIR" commit -m "feat: initial project scaffold" --quiet
+      ok "Git repo initialized"
+    fi
     echo ""
     log "Running GitHub project initialization..."
     local_args=("$PROJECT_DIR" --yes --catalog "$CATALOG")
