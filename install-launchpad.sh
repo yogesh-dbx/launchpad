@@ -202,6 +202,7 @@ install_global() {
     success "Hooks installed"
     # claude-todo-hook must also be on PATH (referenced by project settings.local.json hooks)
     if [[ -f "$HOME/.claude/hooks/claude-todo-hook" ]]; then
+      mkdir -p "$HOME/.local/bin"
       cp "$HOME/.claude/hooks/claude-todo-hook" "$HOME/.local/bin/claude-todo-hook"
       chmod +x "$HOME/.local/bin/claude-todo-hook"
     fi
