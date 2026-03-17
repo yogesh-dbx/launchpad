@@ -38,10 +38,6 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
 ~/.claude/
   CLAUDE.md                    # Global instructions (personalized with your name/role)
   settings.json                # Permissions, hooks, statusline (created once, never overwritten)
-  rules/
-    databricks-python.md       # Python file rules for Databricks
-    databricks-sql.md          # SQL file rules
-    databricks-yaml.md         # YAML/bundle rules
   commands/
     pause-work.md              # /pause-work — save context before stepping away
     resume-work.md             # /resume-work — restore context
@@ -116,7 +112,6 @@ This creates `~/dev/my-pipeline`, verifies Databricks auth (runs `databricks aut
 | `/demo-prep [topic]` | Prepare code and talking points for a customer demo |
 | `/techdebt [area]` | Analyze code for tech debt, suggest improvements |
 | `/customer-review` | Review code quality and best practices before delivery |
-| `/ingest-init` | Generate a Zerobus Ingest producer from a UC table |
 | `/resume` | Resume work from a previous session's plan |
 
 ## The 7 Layers

@@ -38,14 +38,6 @@ Execute code on Databricks and validate the results. You run AFTER code is writt
 - Schema matches expectations
 - No permission errors (catalog access, table ownership)
 
-## Known Gotchas
-
-- `environment_key` must be on the task, not just in `environments`
-- `DATABRICKS_RUNTIME_USER` env var is NOT set on serverless — use `SELECT current_user()`
-- `information_schema.tables` uses `table_name`, not `name`
-- `manage_metric_views(action: "create")` generates broken YAML — use raw DDL via `execute_sql`
-- `cluster_by=["AUTO"]` is NOT valid in Python SDP — use actual column names
-
 ## Output Format
 
 ```

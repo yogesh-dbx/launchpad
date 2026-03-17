@@ -177,12 +177,6 @@ install_global() {
     info "settings.json already exists — preserved (won't overwrite your customizations)"
   fi
 
-  # ── Rules ────────────────────────────────────────────────────────────────
-  if [[ -d "$LAUNCHPAD_DIR/global/rules" ]]; then
-    copy_dir_contents "$LAUNCHPAD_DIR/global/rules" "$HOME/.claude/rules"
-    success "Rules installed"
-  fi
-
   # ── Commands ─────────────────────────────────────────────────────────────
   if [[ -d "$LAUNCHPAD_DIR/global/commands" ]]; then
     copy_dir_contents "$LAUNCHPAD_DIR/global/commands" "$HOME/.claude/commands"
@@ -279,7 +273,6 @@ print_summary() {
   echo "What was installed:"
   echo "  ~/.claude/CLAUDE.md              Global AI assistant instructions"
   echo "  ~/.claude/settings.json          Permissions, hooks, statusline config"
-  echo "  ~/.claude/rules/                 File-type-specific Databricks rules"
   echo "  ~/.claude/commands/              /pause-work, /resume-work, /stats"
   echo "  ~/.claude/agents/                Databricks executor subagent"
   echo "  ~/.claude/hooks/                 Context monitor, issue injection, TODO tracking"
