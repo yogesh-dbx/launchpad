@@ -357,22 +357,18 @@ echo ""
 echo "── Setting up Claude commands & agents ──"
 
 mkdir -p .claude/commands
-cp "$TEMPLATES_DIR/commands/plan.md" .claude/commands/plan.md
-cp "$TEMPLATES_DIR/commands/ship.md" .claude/commands/ship.md
-cp "$TEMPLATES_DIR/commands/demo-prep.md" .claude/commands/demo-prep.md
-cp "$TEMPLATES_DIR/commands/techdebt.md" .claude/commands/techdebt.md
-cp "$TEMPLATES_DIR/commands/customer-review.md" .claude/commands/customer-review.md
-cp "$TEMPLATES_DIR/commands/resume.md" .claude/commands/resume.md
-log "Slash commands: /plan, /ship, /demo-prep, /techdebt, /customer-review, /resume"
+cp "$TEMPLATES_DIR/commands/"*.md .claude/commands/
+CMDS=$(ls .claude/commands/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ', ' | sed 's/, $//')
+log "Slash commands: $CMDS"
 
 # =============================================================================
 # Step 10: Copy Claude subagents
 # =============================================================================
 
 mkdir -p .claude/agents
-cp "$TEMPLATES_DIR/agents/security-reviewer.md" .claude/agents/security-reviewer.md
-cp "$TEMPLATES_DIR/agents/dbx-validator.md" .claude/agents/dbx-validator.md
-log "Agents: security-reviewer, dbx-validator"
+cp "$TEMPLATES_DIR/agents/"*.md .claude/agents/
+AGENTS=$(ls .claude/agents/*.md 2>/dev/null | xargs -I{} basename {} .md | tr '\n' ', ' | sed 's/, $//')
+log "Agents: $AGENTS"
 
 # =============================================================================
 # Step 10a: Merge permissions into .claude/settings.json
