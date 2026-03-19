@@ -48,17 +48,25 @@ This is a fresh `/plan` run. Continue to Phase 1 normally.
 
 ## CRITICAL: Boundary Rules
 
-**These rules apply for the ENTIRE session:**
+**These rules apply for the ENTIRE session. Violating ANY of these wastes time and tokens.**
 
-1. **Confirm `.claude/CLAUDE.md` exists** before planning. If it doesn't exist, STOP and tell the user: "No `.claude/CLAUDE.md` found — run `gh-project-init` first." Do NOT read it until you have a use case (see Phase 1 Step 1).
+### ⛔ FORBIDDEN — Do NOT do any of these:
+- **Do NOT use the Agent tool.** No Explore agents, no Plan agents, no research agents. ZERO subagents. You have Read, Glob, Grep, and Bash — that's all you need.
+- **Do NOT use the Skill tool to invoke this command.** `/plan` is a command file, not a skill. Read it as markdown instructions.
+- **Do NOT explore outside this project directory.** No sibling directories (`../`), no home directory, no other projects.
+- **Do NOT read every source file.** The plan is about WHAT to build, not HOW existing code works.
+- **Do NOT load skills during planning.** Skills are for implementation, not planning. Load them when you build issues, not now.
 
-2. **Verify your location.** Run `pwd` and `git remote get-url origin 2>/dev/null || echo 'no remote'`. Confirm the directory and repo name match the project you intend to plan. State them to the user.
+### ✅ REQUIRED:
+1. **Confirm `.claude/CLAUDE.md` exists** before planning. If missing, STOP and tell the user.
+2. **Verify your location.** Run `pwd` and `git remote get-url origin 2>/dev/null || echo 'no remote'`.
+3. **Read ONLY these files:** `.claude/CLAUDE.md`, `databricks.yml`, and `ls src/ resources/`. That's it. Three reads max.
 
-3. **NEVER explore outside this project directory.** Do not read files in sibling directories (`../`), home directory projects, or any path outside `$(pwd)`. All context you need is in this project.
-
-4. **Do NOT launch parallel exploration agents.** Read files sequentially using Read, Glob, and Grep. The project context is small — you do not need parallel agents to understand it.
-
-5. **Keep exploration minimal.** Read at most: `.claude/CLAUDE.md`, `databricks.yml`, and a quick `ls src/ resources/` to see what exists. Do NOT read every source file. The plan is about WHAT to build, not HOW existing code works.
+### ⏱️ TIME BUDGET:
+- **Phase 1 (Understand):** Under 30 seconds. Three file reads + state to user.
+- **Phase 2 (Plan):** Under 60 seconds. Write PLAN.md.
+- **Phase 3 (GitHub):** Under 90 seconds. Create issues, milestones, board.
+- **Total /plan execution:** Under 3 minutes. If you're spending more, you're over-exploring.
 
 ---
 
