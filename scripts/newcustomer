@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# newcustomer - Create a customer workspace folder with CUSTOMER.md template
+set -euo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+log()  { echo -e "${CYAN}▶${RESET} $*"; }
+ok()   { echo -e "${GREEN}✓${RESET} $*"; }
+warn() { echo -e "${YELLOW}⚠${RESET}  $*"; }
+die()  { echo -e "${RED}✗${RESET} $*" >&2; exit 1; }
+
+usage() {
+  echo -e "${BOLD}Usage:${RESET}  newcustomer <customer-name>"
+  echo ""
+  echo -e "${BOLD}Examples:${RESET}"
+  echo "  newcustomer epic-games"
+  echo "  newcustomer siriusxm"
+  echo ""
+  echo "Creates ~/dev/<customer-name>/ with a CUSTOMER.md template."
+  echo "All projects created inside this folder (via newproject) will"
+  echo "automatically inherit the customer context."
+  exit 1
+}
+
+[[ $# -lt 1 ]] && usage
+[[ "${1:-}" == "--help" || "${1:-}" == "-h" ]] && usage
+
+CUSTOMER_NAME="$1"
+
+# Read DEV_DIR from config if available
+CONFIG_FILE="$HOME/.config/aidevkit/config"
+if [[ -f "$CONFIG_FILE" ]]; then
+  source "$CONFIG_FILE"
+fi
+DEV_DIR="${DEV_DIR:-$HOME/dev}"
+
+CUSTOMER_DIR="$DEV_DIR/$CUSTOMER_NAME"
+
+if [[ -d "$CUSTOMER_DIR" && -f "$CUSTOMER_DIR/CUSTOMER.md" ]]; then
+  die "Customer workspace already exists: $CUSTOMER_DIR/CUSTOMER.md"
+fi
+
+if [[ -d "$CUSTOMER_DIR" ]]; then
+  log "Directory exists, adding CUSTOMER.md template..."
+else
+  log "Creating customer workspace: $CUSTOMER_DIR"
+  mkdir -p "$CUSTOMER_DIR"
+fi
+
+cat > "$CUSTOMER_DIR/CUSTOMER.md" <<'TEMPLATE'
+# Customer: CUSTOMER_NAME
+
+<!-- This file has two sections:
+  1. CUSTOMER CONTEXT - What you know about the customer (reference material)
+  2. BUILD INSTRUCTIONS - How to build things for them (actionable defaults)
+-->
+
+---
+
+# Customer Context
+
+## Overview
+<!-- Brief description of the customer, their data platform, key stakeholders -->
+
+## Infrastructure
+<!-- Cloud provider, IaC tools, deployment approach -->
+- **Cloud:** AWS / Azure / GCP
+- **IaC:** Terraform / Pulumi / CDK
+- **Deployments:** DABs / Terraform / CI/CD
+
+## Architecture
+
+### Catalog Structure
+| Catalog | Purpose | Access |
+|---------|---------|--------|
+| | | |
+
+### Compute
+<!-- Serverless? Classic clusters? Cluster policies? -->
+- **Serverless SQL:** yes / no
+- **Serverless compute (notebooks/jobs):** yes / no
+- **Cluster policies:** yes / no
+
+### Key Constraints
+<!-- Things that DON'T work in their environment -->
+1.
+2.
+3.
+
+## Data Sources
+<!-- Upstream sources flowing into Databricks -->
+
+## Downstream Consumers
+<!-- Where data flows after Databricks -->
+
+## Key Teams & Stakeholders
+| Team | Responsibilities |
+|------|------------------|
+| | |
+
+---
+
+# Build Instructions
+
+Instructions that apply when building demos and solutions for this customer.
+Project-specific CLAUDE.md files in subdirectories can override these defaults.
+
+## Default Environment
+<!-- Workspace URL, profile name, default catalog/schema -->
+- **Databricks Profile:** ``
+- **Catalog:** ``
+- **Schemas:** ``
+
+## Deployment Conventions
+<!-- How code gets deployed in their environment -->
+
+## What Doesn't Work
+<!-- Features/approaches to avoid given their constraints -->
+TEMPLATE
+
+# Replace placeholder with actual name
+if [[ "$(uname)" == "Darwin" ]]; then
+  sed -i '' "s/# Customer: CUSTOMER_NAME/# Customer: ${CUSTOMER_NAME}/" "$CUSTOMER_DIR/CUSTOMER.md"
+else
+  sed -i "s/# Customer: CUSTOMER_NAME/# Customer: ${CUSTOMER_NAME}/" "$CUSTOMER_DIR/CUSTOMER.md"
+fi
+
+# Create .customer-config for newproject defaults
+if [[ ! -f "$CUSTOMER_DIR/.customer-config" ]]; then
+  echo -e -n "  ${CYAN}Databricks CLI profile for this customer (or press Enter to skip):${RESET} "
+  read -r INPUT_PROFILE
+  echo -e -n "  ${CYAN}Default Unity Catalog name (or press Enter to skip):${RESET} "
+  read -r INPUT_CATALOG
+
+  cat > "$CUSTOMER_DIR/.customer-config" <<CFGEOF
+DATABRICKS_PROFILE=${INPUT_PROFILE:-DEFAULT}
+CATALOG=${INPUT_CATALOG:-}
+CFGEOF
+  ok ".customer-config created (profile: ${INPUT_PROFILE:-DEFAULT}, catalog: ${INPUT_CATALOG:-unset})"
+fi
+
+ok "Customer workspace created: $CUSTOMER_DIR"
+ok "CUSTOMER.md template ready — edit it with your customer knowledge"
+echo ""
+echo -e "  ${BOLD}Next steps:${RESET}"
+echo -e "  1. Edit ${CYAN}$CUSTOMER_DIR/CUSTOMER.md${RESET} with customer details"
+echo -e "  2. Type ${CYAN}$(basename "$CUSTOMER_DIR")${RESET} in your terminal to switch context"
+echo -e "  3. Type ${CYAN}newproject my-project${RESET} — profile + catalog auto-detected"
+echo ""

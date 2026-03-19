@@ -13,6 +13,39 @@ You are a project planning agent. Given a use case description, you will:
 
 ---
 
+## Phase 0: Resume Check (ALWAYS RUN FIRST)
+
+**Before anything else**, check if a previous `/plan` session was interrupted (e.g., by context clear):
+
+```bash
+# Check if PLAN.md exists AND issues are missing
+if [ -f PLAN.md ]; then
+  echo "PLAN.md exists"
+  OPEN_ISSUES=$(gh issue list --state open --limit 1 --json number --jq length 2>/dev/null || echo "0")
+  CLOSED_ISSUES=$(gh issue list --state closed --limit 1 --json number --jq length 2>/dev/null || echo "0")
+  echo "Open issues: $OPEN_ISSUES, Closed issues: $CLOSED_ISSUES"
+fi
+```
+
+**If PLAN.md exists but there are ZERO issues (open + closed = 0):**
+This means the plan was approved but GitHub setup never completed (session was cleared or interrupted).
+- Tell the user: "Found PLAN.md but no GitHub issues. Resuming from Phase 3 — creating issues from the existing plan."
+- Read PLAN.md
+- Skip Phase 1 and Phase 2
+- Jump directly to **Phase 3: Setup GitHub**
+- Create all issues, milestones, board items from the existing PLAN.md
+
+**If PLAN.md exists AND issues exist:**
+The plan is already fully set up. Tell the user the current status:
+- How many issues open vs closed
+- Suggest: "Plan already exists with N issues. To re-plan, delete PLAN.md and run `/plan` again. To start building, say 'build issue #N'."
+- STOP — do not re-plan.
+
+**If PLAN.md does not exist:**
+This is a fresh `/plan` run. Continue to Phase 1 normally.
+
+---
+
 ## CRITICAL: Boundary Rules
 
 **These rules apply for the ENTIRE session:**

@@ -63,25 +63,89 @@ fi
 
 # ── Step 2: Refresh skills in all dev projects that have .ai-dev-kit ──────────
 echo ""
-log "Refreshing skills in all projects in ~/dev/..."
+log "Refreshing skills in all projects in ~/dev/ (including customer folders)..."
 
 UPDATED=0
 FIRST_PROJECT_SKILLS_DIR=""
 
-for project_dir in "$DEV_DIR"/*/; do
-  [[ ! -d "$project_dir/.ai-dev-kit" ]] && continue
-  project_name="$(basename "$project_dir")"
+# Find projects at depth 1 (~/dev/project/) AND depth 2 (~/dev/customer/project/)
+# A project is identified by having .ai-dev-kit directory
+find "$DEV_DIR" -maxdepth 3 -name ".ai-dev-kit" -type d 2>/dev/null | sort | while read aidevkit_dir; do
+  project_dir="$(dirname "$aidevkit_dir")"
+  # Skip if the directory IS a customer folder (has CUSTOMER.md but no .ai-dev-kit at root)
+  [[ -f "$project_dir/CUSTOMER.md" ]] && continue
+
+  # Build display name: "customer/project" for nested, "project" for flat
+  relative_path="${project_dir#$DEV_DIR/}"
+  project_name="$relative_path"
 
   echo -e "  ${CYAN}→${RESET} $project_name"
+
+  # Preserve custom skills before overwriting managed skills
+  local_custom_dir="$project_dir/.claude/skills/custom"
+  custom_backup=""
+  if [[ -d "$local_custom_dir" ]]; then
+    custom_backup="$(mktemp -d)"
+    cp -R "$local_custom_dir" "$custom_backup/custom"
+    echo -e "    ${YELLOW}↳ Preserved custom skills${RESET}"
+  fi
+
   (
     cd "$project_dir"
     bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/databricks-skills/install_skills.sh) --force \
       2>&1 | grep -E "✓|✗|Installed|Skipped|Error" | sed 's/^/    /' || true
   )
+
+  # Restore custom skills after managed skills are refreshed
+  if [[ -n "$custom_backup" && -d "$custom_backup/custom" ]]; then
+    mkdir -p "$local_custom_dir"
+    cp -R "$custom_backup/custom/"* "$local_custom_dir/" 2>/dev/null || true
+    rm -rf "$custom_backup"
+    echo -e "    ${GREEN}↳ Restored custom skills${RESET}"
+  fi
+
+  # Refresh customer context if project has markers
+  PROJECT_CLAUDE_MD=""
+  [[ -f "$project_dir/.claude/CLAUDE.md" ]] && PROJECT_CLAUDE_MD="$project_dir/.claude/CLAUDE.md"
+  [[ -z "$PROJECT_CLAUDE_MD" && -f "$project_dir/CLAUDE.md" ]] && PROJECT_CLAUDE_MD="$project_dir/CLAUDE.md"
+
+  if [[ -n "$PROJECT_CLAUDE_MD" ]] && grep -q "CUSTOMER_CONTEXT_START:" "$PROJECT_CLAUDE_MD" 2>/dev/null; then
+    cust_name=$(grep "CUSTOMER_CONTEXT_START:" "$PROJECT_CLAUDE_MD" | head -1 | sed 's/.*START://' | sed 's/ *-->.*//')
+    cust_file="$(dirname "$project_dir")/CUSTOMER.md"
+    if [[ -f "$cust_file" ]]; then
+      # Replace content between markers with fresh CUSTOMER.md
+      # Use python for reliable multi-line replacement
+      python3 -c "
+import re
+with open('$PROJECT_CLAUDE_MD') as f:
+    content = f.read()
+pattern = r'<!-- CUSTOMER_CONTEXT_START:.*?-->.*?<!-- CUSTOMER_CONTEXT_END -->'
+with open('$cust_file') as f:
+    customer_content = f.read()
+replacement = '<!-- CUSTOMER_CONTEXT_START:${cust_name} -->\n\n' + customer_content + '\n\n<!-- CUSTOMER_CONTEXT_END -->'
+new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+with open('$PROJECT_CLAUDE_MD', 'w') as f:
+    f.write(new_content)
+" 2>/dev/null && echo -e "    ${GREEN}↳ Refreshed customer context: $cust_name${RESET}"
+    fi
+  fi
+
   # Track the first project's skills dir as source for CLAUDE.md generation
-  [[ -z "$FIRST_PROJECT_SKILLS_DIR" ]] && FIRST_PROJECT_SKILLS_DIR="$project_dir/.claude/skills"
-  (( UPDATED++ ))
+  echo "$project_dir/.claude/skills" >> /tmp/aidevkit_first_skills_dir 2>/dev/null || true
 done
+
+# Count updated projects (find | while runs in subshell, can't increment counter)
+UPDATED=$(find "$DEV_DIR" -maxdepth 3 -name ".ai-dev-kit" -type d 2>/dev/null | while read d; do
+  dir="$(dirname "$d")"
+  [[ -f "$dir/CUSTOMER.md" ]] && continue
+  echo "$dir"
+done | wc -l | tr -d ' ')
+
+FIRST_PROJECT_SKILLS_DIR=""
+if [[ -f /tmp/aidevkit_first_skills_dir ]]; then
+  FIRST_PROJECT_SKILLS_DIR="$(head -1 /tmp/aidevkit_first_skills_dir)"
+  rm -f /tmp/aidevkit_first_skills_dir
+fi
 
 if [[ $UPDATED -eq 0 ]]; then
   warn "No AI Dev Kit projects found in ~/dev/ — CLAUDE.md will use local repo for skill names."
@@ -169,7 +233,18 @@ The Databricks MCP server is configured per-project in \`.mcp.json\`. When avail
 - Default Databricks profile: \`DEFAULT\`
 HEREDOC
 
-  ok "~/.claude/CLAUDE.md regenerated"
+  # Append user's custom rules if they exist (never overwritten by updates)
+  CUSTOM_CLAUDE_MD="$HOME/.claude/CLAUDE-custom.md"
+  if [[ -f "$CUSTOM_CLAUDE_MD" ]]; then
+    echo "" >> "$GLOBAL_CLAUDE_MD"
+    echo "---" >> "$GLOBAL_CLAUDE_MD"
+    echo "" >> "$GLOBAL_CLAUDE_MD"
+    cat "$CUSTOM_CLAUDE_MD" >> "$GLOBAL_CLAUDE_MD"
+    ok "~/.claude/CLAUDE.md regenerated (with custom rules from CLAUDE-custom.md)"
+  else
+    ok "~/.claude/CLAUDE.md regenerated"
+    log "Tip: Create ~/.claude/CLAUDE-custom.md for personal rules that survive updates"
+  fi
   log "Previous CLAUDE.md backed up to ~/.claude/CLAUDE.md.bak"
 fi
 

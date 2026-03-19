@@ -74,12 +74,6 @@ if [[ "$PROJECT_NAME" =~ ^[[:space:]] || "$PROJECT_NAME" =~ [[:space:]]$ ]]; the
   die "Project name cannot start or end with spaces. Use hyphens instead."
 fi
 
-# ── Resolve profile ──────────────────────────────────────────────────────────
-if [[ -z "$PROFILE" ]]; then
-  PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
-fi
-export DATABRICKS_CONFIG_PROFILE="$PROFILE"
-
 # ── Resolve paths ─────────────────────────────────────────────────────────────
 # Read DEV_DIR from config if available, otherwise default to ~/dev
 CONFIG_FILE="$HOME/.config/aidevkit/config"
@@ -87,7 +81,67 @@ if [[ -f "$CONFIG_FILE" ]]; then
   source "$CONFIG_FILE"
 fi
 DEV_DIR="${DEV_DIR:-$HOME/dev}"
-PROJECT_DIR="$DEV_DIR/$PROJECT_NAME"
+
+# ── Customer workspace detection ─────────────────────────────────────────────
+# If CWD is a subdirectory of DEV_DIR (e.g., ~/dev/sxm/), create project here.
+# CUSTOMER.md is optional — enhances the project with customer context.
+CUSTOMER_FILE=""
+CUSTOMER_NAME=""
+CUSTOMER_CONFIG_DIR=""
+
+# Determine project location: if inside a subfolder of DEV_DIR, create there
+if [[ "$PWD" == "$DEV_DIR"/* && "$PWD" != "$DEV_DIR" ]]; then
+  CWD_PARENT="$(dirname "$PWD")"
+  if [[ "$CWD_PARENT" == "$DEV_DIR" && ! -d "$PWD/.claude" && ! -d "$PWD/.git" ]]; then
+    PROJECT_DIR="$PWD/$PROJECT_NAME"
+    CUSTOMER_CONFIG_DIR="$PWD"
+    if [[ -f "$PWD/CUSTOMER.md" ]]; then
+      CUSTOMER_FILE="$PWD/CUSTOMER.md"
+      CUSTOMER_NAME="$(basename "$PWD")"
+      ok "Customer workspace detected: $CUSTOMER_NAME"
+    else
+      log "Creating project in: $(basename "$PWD")/ (no CUSTOMER.md — generic)"
+    fi
+  elif [[ -f "$CWD_PARENT/CUSTOMER.md" && "$(dirname "$CWD_PARENT")" == "$DEV_DIR" ]]; then
+    PROJECT_DIR="$CWD_PARENT/$PROJECT_NAME"
+    CUSTOMER_CONFIG_DIR="$CWD_PARENT"
+    CUSTOMER_FILE="$CWD_PARENT/CUSTOMER.md"
+    CUSTOMER_NAME="$(basename "$CWD_PARENT")"
+    ok "Customer workspace detected (from sibling): $CUSTOMER_NAME"
+  else
+    PROJECT_DIR="$DEV_DIR/$PROJECT_NAME"
+  fi
+else
+  PROJECT_DIR="$DEV_DIR/$PROJECT_NAME"
+fi
+
+# ── Source customer defaults (.customer-config) ──────────────────────────────
+# If in a customer folder with .customer-config, source it for profile/catalog defaults.
+# CLI flags --profile and --catalog always override these.
+if [[ -n "$CUSTOMER_CONFIG_DIR" && -f "$CUSTOMER_CONFIG_DIR/.customer-config" ]]; then
+  CUSTOMER_DEFAULTS="$CUSTOMER_CONFIG_DIR/.customer-config"
+  # Only apply if the user didn't pass the flag explicitly
+  if [[ -z "$PROFILE" ]]; then
+    _CFG_PROFILE=$(grep "^DATABRICKS_PROFILE=" "$CUSTOMER_DEFAULTS" 2>/dev/null | cut -d= -f2)
+    if [[ -n "$_CFG_PROFILE" ]]; then
+      PROFILE="$_CFG_PROFILE"
+      ok "Profile from customer config: $PROFILE"
+    fi
+  fi
+  if [[ -z "$CATALOG" ]]; then
+    _CFG_CATALOG=$(grep "^CATALOG=" "$CUSTOMER_DEFAULTS" 2>/dev/null | cut -d= -f2)
+    if [[ -n "$_CFG_CATALOG" ]]; then
+      CATALOG="$_CFG_CATALOG"
+      ok "Catalog from customer config: $CATALOG"
+    fi
+  fi
+fi
+
+# ── Resolve profile (fallback if not set by flag or customer config) ─────────
+if [[ -z "$PROFILE" ]]; then
+  PROFILE="${DATABRICKS_CONFIG_PROFILE:-DEFAULT}"
+fi
+export DATABRICKS_CONFIG_PROFILE="$PROFILE"
 
 if [[ -e "$PROJECT_DIR" ]]; then
   die "Directory already exists: $PROJECT_DIR"
@@ -406,6 +460,27 @@ HEREDOC
   ok "CLAUDE.md created"
 else
   ok "CLAUDE.md already exists, skipping"
+fi
+
+# ── Append customer context if in a customer workspace ───────────────────────
+if [[ -n "$CUSTOMER_FILE" && -f "$CUSTOMER_FILE" ]]; then
+  # Find the project CLAUDE.md (could be in .claude/ or at root)
+  TARGET_CLAUDE_MD=""
+  if [[ -f "$PROJECT_DIR/.claude/CLAUDE.md" ]]; then
+    TARGET_CLAUDE_MD="$PROJECT_DIR/.claude/CLAUDE.md"
+  elif [[ -f "$PROJECT_DIR/CLAUDE.md" ]]; then
+    TARGET_CLAUDE_MD="$PROJECT_DIR/CLAUDE.md"
+  fi
+
+  if [[ -n "$TARGET_CLAUDE_MD" ]]; then
+    echo "" >> "$TARGET_CLAUDE_MD"
+    echo "<!-- CUSTOMER_CONTEXT_START:${CUSTOMER_NAME} -->" >> "$TARGET_CLAUDE_MD"
+    echo "" >> "$TARGET_CLAUDE_MD"
+    cat "$CUSTOMER_FILE" >> "$TARGET_CLAUDE_MD"
+    echo "" >> "$TARGET_CLAUDE_MD"
+    echo "<!-- CUSTOMER_CONTEXT_END -->" >> "$TARGET_CLAUDE_MD"
+    ok "Customer context appended from $CUSTOMER_NAME/CUSTOMER.md"
+  fi
 fi
 
 # ── Create .vscode/tasks.json (auto-launch claude on folder open) ────────────

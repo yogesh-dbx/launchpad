@@ -159,7 +159,17 @@ install_global() {
     sed -e "s/{{USER_NAME}}/$escaped_name/g" \
         -e "s/{{USER_ROLE}}/$escaped_role/g" \
         "$template" > "$HOME/.claude/CLAUDE.md"
-    success "CLAUDE.md installed (personalized)"
+
+    # Append user's custom rules if they exist (never overwritten by updates)
+    if [[ -f "$HOME/.claude/CLAUDE-custom.md" ]]; then
+      echo "" >> "$HOME/.claude/CLAUDE.md"
+      echo "---" >> "$HOME/.claude/CLAUDE.md"
+      echo "" >> "$HOME/.claude/CLAUDE.md"
+      cat "$HOME/.claude/CLAUDE-custom.md" >> "$HOME/.claude/CLAUDE.md"
+      success "CLAUDE.md installed (personalized + custom rules)"
+    else
+      success "CLAUDE.md installed (personalized)"
+    fi
   else
     warn "CLAUDE.md.template not found — skipping"
   fi
