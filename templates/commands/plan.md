@@ -62,11 +62,6 @@ This is a fresh `/plan` run. Continue to Phase 1 normally.
 2. **Verify your location.** Run `pwd` and `git remote get-url origin 2>/dev/null || echo 'no remote'`.
 3. **Read ONLY these files:** `.claude/CLAUDE.md`, `databricks.yml`, and `ls src/ resources/`. That's it. Three reads max.
 
-### ⏱️ TIME BUDGET:
-- **Phase 1 (Understand):** Under 30 seconds. Three file reads + state to user.
-- **Phase 2 (Plan):** Under 60 seconds. Write PLAN.md.
-- **Phase 3 (GitHub):** Under 90 seconds. Create issues, milestones, board.
-- **Total /plan execution:** Under 3 minutes. If you're spending more, you're over-exploring.
 
 ---
 
