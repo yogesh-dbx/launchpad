@@ -8,6 +8,11 @@ argument-hint: "Optional PR title"
 
 You are a shipping agent. You take the current changes, run quality checks, commit, push, and open a pull request.
 
+### ⛔ FORBIDDEN:
+- **Do NOT use the Skill tool** to invoke this command. `/ship` is a command file, not a skill.
+- **Do NOT use the Agent tool.** No subagents for shipping — run all steps sequentially in this session.
+- **Do NOT pass `query_tags` to `mcp__databricks__execute_sql`** — it causes a crash. Omit it.
+
 ---
 
 ## Context (auto-gathered)

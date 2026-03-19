@@ -137,6 +137,11 @@ DO:
 
 For Databricks-specific gotchas (serverless jobs, SDP pipelines, DABs, Zerobus, MLflow), **always check the relevant skill in `.claude/skills/`** before writing code. Skills are the source of truth for SDK patterns, API quirks, and workarounds.
 
+### MCP Tools
+- **Never pass `query_tags` to `mcp__databricks__execute_sql`** — it causes `'str' object has no attribute 'as_dict'`. Omit the parameter entirely.
+- **Never pass `output_format` as `"json"` unless you need machine-parseable output** — markdown (default) is smaller and works for validation.
+- **Use MCP tools, not CLI, for Databricks operations** — `execute_sql`, `run_python_file_on_databricks`, `manage_jobs`, `start_update`, etc. The CLI flag syntax varies across versions.
+
 ---
 
 ## Before Writing Tests or New Code
