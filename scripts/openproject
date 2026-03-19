@@ -86,10 +86,38 @@ fi
 
 # ── Interactive picker (no argument) ──────────────────────────────────────────
 [[ -d "$DEV_DIR" ]] || die "Projects directory not found: $DEV_DIR"
-projects=()
-while IFS= read -r d; do
-  projects+=("$DEV_DIR/$d")
-done < <(ls -t "$DEV_DIR" | while read -r name; do [[ -d "$DEV_DIR/$name" && "$name" != .* ]] && echo "$name"; done)
+
+# Collect projects: flat (~/dev/project/) AND nested (~/dev/customer/project/)
+customer_projects=()
+customer_display=()
+personal_projects=()
+personal_display=()
+
+for entry in "$DEV_DIR"/*/; do
+  [[ -d "$entry" ]] || continue
+  name="$(basename "$entry")"
+  [[ "$name" == .* ]] && continue
+
+  if [[ -f "$entry/CUSTOMER.md" || -f "$entry/.customer-config" ]]; then
+    # Customer folder — list sub-projects
+    for sub in "$entry"*/; do
+      [[ -d "$sub" ]] || continue
+      subname="$(basename "$sub")"
+      [[ "$subname" == .* ]] && continue
+      if [[ -d "$sub/.claude" || -d "$sub/.git" || -d "$sub/.ai-dev-kit" ]]; then
+        customer_projects+=("$sub")
+        customer_display+=("$name/$subname")
+      fi
+    done
+  elif [[ -d "$entry/.claude" || -d "$entry/.git" || -d "$entry/.ai-dev-kit" ]]; then
+    personal_projects+=("$entry")
+    personal_display+=("$name")
+  fi
+done
+
+# Merge: customer projects first, then personal
+projects=("${customer_projects[@]}" "${personal_projects[@]}")
+display_names=("${customer_display[@]}" "${personal_display[@]}")
 
 if [[ ${#projects[@]} -eq 0 ]]; then
   die "No projects in $DEV_DIR"
@@ -97,12 +125,32 @@ fi
 
 echo ""
 echo -e "  ${BOLD}Projects in $DEV_DIR:${RESET}"
-echo "  ───────────────────"
+
+# Print customer projects grouped
+prev_group=""
 i=1
-for p in "${projects[@]}"; do
-  printf "  %2d)  %s\n" "$i" "$(basename "$p")"
-  (( i++ ))
-done
+if [[ ${#customer_display[@]} -gt 0 ]]; then
+  for idx in "${!customer_display[@]}"; do
+    dname="${customer_display[$idx]}"
+    group="${dname%%/*}"
+    if [[ "$group" != "$prev_group" ]]; then
+      echo -e "  ${CYAN}── $group ──${RESET}"
+      prev_group="$group"
+    fi
+    printf "  %2d)  %s\n" "$i" "$dname"
+    (( i++ ))
+  done
+fi
+
+# Print personal projects
+if [[ ${#personal_display[@]} -gt 0 ]]; then
+  echo "  ───────────────────"
+  for idx in "${!personal_display[@]}"; do
+    printf "  %2d)  %s\n" "$i" "${personal_display[$idx]}"
+    (( i++ ))
+  done
+fi
+
 echo ""
 printf "  Select (1-%d): " "${#projects[@]}"
 read -r choice
