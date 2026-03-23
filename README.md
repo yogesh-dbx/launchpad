@@ -21,7 +21,7 @@ The launchpad layer sits on top of the [Databricks AI Dev Kit](https://github.co
 ## Installation
 
 ```bash
-git clone https://github.com/yogesh-singh_data/launchpad.git
+git clone https://github.com/yogesh-dbx/launchpad.git
 cd launchpad
 bash install-launchpad.sh
 ```
