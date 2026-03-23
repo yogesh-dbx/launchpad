@@ -216,3 +216,4 @@ export PATH="$HOME/.local/bin:$PATH"
 **Commands not recognized in Claude** — Make sure the project has `.claude/commands/` populated. Run `newproject` or manually copy from `~/.local/share/project-templates/commands/`.
 
 **Settings overwritten** — The installer never overwrites `~/.claude/settings.json` if it already exists. To reset it, delete the file and re-run the installer.
+
