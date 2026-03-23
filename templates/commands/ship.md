@@ -1,7 +1,7 @@
 ---
-allowed-tools: Bash(git:*), Bash(gh pr:*), Bash(gh issue:*), Bash(gh project:*), Bash(gh api:*), Bash(uv run:*), Bash(pytest:*), Bash(ruff:*), mcp__databricks__*
+allowed-tools: Bash(git:*), Bash(gh pr:*), Bash(gh issue:*), Bash(gh project:*), Bash(gh api:*), Bash(uv run:*), Bash(pytest:*), Bash(ruff:*), mcp__databricks__*, Agent
 description: "Test, commit, push, create a PR, execute on Databricks, validate, and close the issue"
-argument-hint: "Optional PR title"
+argument-hint: "[--sdd] [PR title]"
 ---
 
 # /ship — Test → Commit → Push → PR
@@ -10,8 +10,69 @@ You are a shipping agent. You take the current changes, run quality checks, comm
 
 ### ⛔ FORBIDDEN:
 - **Do NOT use the Skill tool** to invoke this command. `/ship` is a command file, not a skill.
-- **Do NOT use the Agent tool.** No subagents for shipping — run all steps sequentially in this session.
 - **Do NOT pass `query_tags` to `mcp__databricks__execute_sql`** — it causes a crash. Omit it.
+- In standard mode (no `--sdd`): **Do NOT use the Agent tool.** Run all steps sequentially.
+
+---
+
+## Step 0: Parse Mode
+
+Check `$ARGUMENTS` for the `--sdd` flag:
+- If `$ARGUMENTS` contains `--sdd` → **SDD mode** (run review pipeline before shipping)
+- Otherwise → **Standard mode** (skip to Step 1)
+
+Strip `--sdd` from arguments — any remaining text is the PR title.
+
+### SDD Mode — Review Pipeline (before Step 1)
+
+When `--sdd` is active, run three subagents in sequence before the standard ship steps. Each runs in a **fresh context** via the Agent tool.
+
+**Important:** The Agent tool uses `subagent_type` parameter. Use the agent definitions in `.claude/agents/`.
+
+#### SDD-1: Implementer Review
+
+The code is already written (you're shipping it). Skip the implementer — go straight to reviewers.
+
+#### SDD-2: Spec Compliance Review
+
+Dispatch the `sdd-spec-reviewer` agent:
+```
+Prompt: "Review the implementation for issue #N against its spec.
+Issue body: <paste the issue body from gh issue view>
+Changed files: <git diff main...HEAD --name-only>
+Git diff: <git diff main...HEAD>
+Report: APPROVED or ISSUES_FOUND with a requirement checklist."
+```
+
+Use: `Agent(subagent_type="general-purpose", prompt=<above>)`
+
+**If ISSUES_FOUND with critical gaps:** Show the user the findings and ask: "Spec review found issues. Fix and re-run, or ship anyway?"
+
+#### SDD-3: Quality Review
+
+Dispatch the `sdd-quality-reviewer` agent:
+```
+Prompt: "Review code quality and Databricks best practices.
+Changed files: <git diff main...HEAD --name-only>
+Git diff: <git diff main...HEAD>
+Report: APPROVED or ISSUES_FOUND with severity table."
+```
+
+Use: `Agent(subagent_type="general-purpose", prompt=<above>)`
+
+**If ISSUES_FOUND with Critical severity:** Show the user and ask: "Quality review found critical issues. Fix and re-run, or ship anyway?"
+
+#### SDD Summary
+
+After both reviewers complete, show:
+```
+SDD Review:
+  Spec:    ✅ APPROVED (or ❌ ISSUES_FOUND — N gaps)
+  Quality: ✅ APPROVED (or ❌ ISSUES_FOUND — N critical)
+```
+
+If both APPROVED → proceed to Step 1 (standard ship).
+If either has issues → stop and wait for user decision.
 
 ---
 
@@ -229,10 +290,29 @@ Board:   📋 Updated to "In Progress" (or ⏭️ skipped)
 
 ---
 
-## Step 8: Final Summary
+## Step 8: Merge to Main
 
-Update the summary from Step 6 to include execution status:
+**Ask the user before merging:**
+
+> Issue #N closed. PR #M ready to merge.
+> Merge PR #M to main? [Y/n]
+
+**If user confirms (or says nothing — default yes):**
+```bash
+gh pr merge <N> --squash --delete-branch
+git checkout main
+git pull --quiet
 ```
+
+**If user says no:** Leave the PR open. Tell the user they can merge later with `gh pr merge <N> --squash --delete-branch`.
+
+---
+
+## Step 9: Final Summary
+
+Update the summary from Step 6 to include execution and merge status:
+```
+SDD:       ✅ Spec APPROVED, Quality APPROVED (or ⏭️ standard mode)
 Branch:    feature/add-pipeline
 Commit:    abc1234 feat: add SDP pipeline (#3)
 PR:        https://github.com/<owner>/<repo>/pull/N
@@ -243,6 +323,7 @@ Execution: ✅ Serverless job completed in 55s
   🔗 https://<host>/jobs/<job_id>/runs/<run_id>
 Validated: ✅ Table has 90,917 rows, 1,000 players
 Issue:     ✅ #3 closed with validation comment
+Merged:    ✅ PR #M squash-merged to main (or ⏭️ skipped)
 ```
 
 ---

@@ -77,14 +77,39 @@ Note any failed or running jobs.
 
 ---
 
+## Step 5.5: Pending PR Cleanup
+
+Check for open PRs linked to already-closed issues — this means a previous `/ship` didn't finish the merge step:
+
+```bash
+gh pr list --state open --json number,title,headRefName,url --limit 10
+```
+
+For each open PR, check if its linked issue is closed:
+```bash
+# Extract issue number from PR branch (e.g., feature/seed-raw-listener-events → check recent closed issues)
+gh issue list --state closed --limit 20 --json number,title
+```
+
+**If an open PR exists for a closed issue:**
+- Tell the user: "PR #N is still open but issue #M is already closed. Merging to main now."
+- Merge it: `gh pr merge <N> --squash --delete-branch`
+- Pull main: `git checkout main && git pull --quiet`
+- Commit any stray uncommitted files (tooling, config) with `chore: add project tooling`
+
+**If no pending PRs:** continue to Step 6.
+
+---
+
 ## Step 6: Recommendation
 
 Based on all the above, recommend **one specific action**:
 
-1. If there are uncommitted changes → "You have uncommitted work on `branch-name`. Continue working or run `/ship` to create a PR."
-2. If a branch matches an open issue → "You're working on issue #N (`title`). Continue on branch `feature/xxx`."
-3. If no work in progress → Find the first "Ready" issue (all deps closed) and say: "Start with issue #N — create branch `feature/xxx` and begin coding."
-4. If all issues are closed → "All issues complete! The project is done."
+1. If there's a pending PR for a closed issue → merge it first (Step 5.5), then suggest next issue
+2. If there are uncommitted changes on a feature branch → "You have uncommitted work on `branch-name`. Continue working or run `/ship`."
+3. If a branch matches an open issue → "You're working on issue #N (`title`). Continue on branch `feature/xxx`."
+4. If on main with no work in progress → Find the first "Ready" issue (all deps closed) and say: "Start with issue #N — create branch `feature/xxx` and begin coding."
+5. If all issues are closed → "All issues complete! The project is done."
 
 ---
 

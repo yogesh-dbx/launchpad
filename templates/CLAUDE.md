@@ -89,11 +89,20 @@ Reference issue numbers: `feat: add SDP pipeline (#3)`
 
 ---
 
-## Shipping Rule
+## Build vs Ship — Two Separate Steps
 
-**NEVER manually `git commit` / `git push` / `gh pr create`.** Always use `/ship` after writing code. The `/ship` command handles everything: test → commit → push → PR → **execute on Databricks** → **validate output** → **close the issue**. Skipping `/ship` means the code is pushed but never actually run or validated — that is NOT done.
+**"Build" and "ship" are NEVER the same action.** When the user says "build issue #N", you:
+1. Create the feature branch
+2. Read the issue Contract
+3. Write the code
+4. Test locally (lint, syntax check)
+5. **STOP and tell the user:** "Code ready. Run `/ship` or `/ship --sdd` when ready."
 
-If a plugin (e.g., `feature-dev:feature-dev`) tries to commit/push on its own, **stop it** and run `/ship` instead.
+**Do NOT commit, push, create PRs, execute on Databricks, validate, or close issues during a build.** That is what `/ship` does — and the user must invoke it explicitly.
+
+**NEVER manually `git commit` / `git push` / `gh pr create`.** The `/ship` command handles everything: test → commit → push → PR → execute on Databricks → validate output → merge to main → close the issue. Skipping `/ship` means the code is pushed but never actually run or validated — that is NOT done.
+
+If a plugin (e.g., `feature-dev:feature-dev`) tries to commit/push on its own, **stop it** and tell the user to run `/ship`.
 
 ---
 
