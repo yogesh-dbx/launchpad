@@ -39,8 +39,8 @@ The installer is idempotent. Run it again after pulling updates to refresh all i
   CLAUDE.md                    # Global instructions (personalized with your name/role)
   settings.json                # Permissions, hooks, statusline (created once, never overwritten)
   commands/
-    pause-work.md              # /pause-work — save context before stepping away
-    resume-work.md             # /resume-work — restore context
+    pause.md                   # /pause — save context before stepping away
+    resume.md                  # /resume — restore context
     stats.md                   # /stats — session statistics
   agents/
     databricks-executor.md     # Subagent for Databricks execution tasks
@@ -91,7 +91,7 @@ This creates `~/dev/my-pipeline`, verifies Databricks auth (runs `databricks aut
 2. **Plan work:** `/plan Build a streaming pipeline that ingests Kafka events`
 3. **Work on issues:** Claude picks up the next issue, writes code, tests it
 4. **Ship:** `/ship Add sessionization to cleansed layer` — tests, commits, pushes, creates PR, validates on Databricks, closes the issue
-5. **Pause:** `/pause-work` saves full context; `/resume-work` restores it next session
+5. **Pause:** `/pause` saves full context; `/resume` restores it next session
 
 ## Available Commands
 
@@ -99,8 +99,8 @@ This creates `~/dev/my-pipeline`, verifies Databricks auth (runs `databricks aut
 
 | Command | Purpose |
 |---------|---------|
-| `/pause-work` | Serialize session context to disk before stepping away |
-| `/resume-work` | Restore context from a previous `/pause-work` |
+| `/pause` | Serialize session context to disk before stepping away |
+| `/resume` | Restore context from a previous `/pause` |
 | `/stats` | Show session stats: tokens used, cost, context usage |
 
 ### Project Commands (installed per-project via templates)

@@ -283,7 +283,7 @@ print_summary() {
   echo "What was installed:"
   echo "  ~/.claude/CLAUDE.md              Global AI assistant instructions"
   echo "  ~/.claude/settings.json          Permissions, hooks, statusline config"
-  echo "  ~/.claude/commands/              /pause-work, /resume-work, /stats"
+  echo "  ~/.claude/commands/              /pause, /resume, /stats"
   echo "  ~/.claude/agents/                Databricks executor subagent"
   echo "  ~/.claude/hooks/                 Context monitor, issue injection, TODO tracking"
   echo "  ~/.claude/statusline.sh          Status bar (model, branch, cost, context)"
