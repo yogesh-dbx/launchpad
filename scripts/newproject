@@ -620,8 +620,7 @@ elif [[ "${TERM_PROGRAM:-}" == "vscode" ]]; then
 elif [[ "$HAS_GHOSTTY" == true ]]; then
   log "Launching Ghostty with Claude Code..."
   "$GHOSTTY_BIN" \
-    --working-directory="$PROJECT_DIR" \
-    --command="$CLAUDE_BIN" \
+    -- bash -c "cd '$PROJECT_DIR' && exec '$CLAUDE_BIN'" \
     &
   ok "Ghostty launched!"
 else
