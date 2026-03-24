@@ -32,7 +32,30 @@ State:
 
 ---
 
-## Step 3: Open Issues
+## Step 3: What's Been Shipped
+
+Run in parallel:
+```bash
+gh issue list --state closed --limit 5 --json number,title,closedAt --order updated
+git log --oneline -5
+```
+
+Display as:
+```
+Recently shipped:
+  ✅ #N  Title (closed X days ago)
+  ✅ #N  Title (closed X days ago)
+
+Recent commits:
+  abc1234  feat: ...
+  def5678  fix: ...
+```
+
+This gives the user immediate context on project momentum without digging through history.
+
+---
+
+## Step 4: Open Issues
 
 ```bash
 gh issue list --state open --limit 20 --json number,title,labels,milestone,assignees
@@ -51,7 +74,7 @@ For each issue, determine status:
 
 ---
 
-## Step 4: Project Board Status
+## Step 5: Project Board Status
 
 Read the project number:
 ```bash
@@ -65,7 +88,7 @@ gh project item-list <NUMBER> --owner @me --format json --limit 50 --jq '.items[
 
 ---
 
-## Step 5: Execution State
+## Step 6: Execution State
 
 Check if any Databricks jobs or pipelines exist for this project:
 ```bash
@@ -77,7 +100,7 @@ Note any failed or running jobs.
 
 ---
 
-## Step 5.5: Pending PR Cleanup
+## Step 6.5: Pending PR Cleanup
 
 Check for open PRs linked to already-closed issues — this means a previous `/ship` didn't finish the merge step:
 
@@ -101,11 +124,11 @@ gh issue list --state closed --limit 20 --json number,title
 
 ---
 
-## Step 6: Recommendation
+## Step 7: Recommendation
 
 Based on all the above, recommend **one specific action**:
 
-1. If there's a pending PR for a closed issue → merge it first (Step 5.5), then suggest next issue
+1. If there's a pending PR for a closed issue → merge it first (Step 6.5), then suggest next issue
 2. If there are uncommitted changes on a feature branch → "You have uncommitted work on `branch-name`. Continue working or run `/ship`."
 3. If a branch matches an open issue → "You're working on issue #N (`title`). Continue on branch `feature/xxx`."
 4. If on main with no work in progress → Find the first "Ready" issue (all deps closed) and say: "Start with issue #N — create branch `feature/xxx` and begin coding."
