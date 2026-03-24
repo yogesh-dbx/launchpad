@@ -61,8 +61,7 @@ launch() {
     echo -e "  Run: ${CYAN}cd $dir && claude${RESET}"
   elif [[ "$HAS_GHOSTTY" == true ]]; then
     "$GHOSTTY_BIN" \
-      --working-directory="$dir" \
-      --command="$CLAUDE_BIN" \
+      -- bash -c "cd '$dir' && exec '$CLAUDE_BIN'" \
       &
     echo -e "${GREEN}✓${RESET} Opening ${CYAN}$name${RESET} in Ghostty..."
   else
