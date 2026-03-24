@@ -248,10 +248,46 @@ HEREDOC
   log "Previous CLAUDE.md backed up to ~/.claude/CLAUDE.md.bak"
 fi
 
+# ── Step 4: Sync launchpad templates → installed project templates ────────────
+echo ""
+log "Syncing launchpad templates to ~/.local/share/project-templates/..."
+
+LAUNCHPAD_DIR="${LAUNCHPAD_DIR:-$DEV_DIR/launchpad}"
+INSTALLED_TEMPLATES="$HOME/.local/share/project-templates"
+
+if [[ -d "$LAUNCHPAD_DIR/templates" ]]; then
+  SYNCED=0
+  for subdir in commands agents; do
+    src="$LAUNCHPAD_DIR/templates/$subdir"
+    dst="$INSTALLED_TEMPLATES/$subdir"
+    if [[ -d "$src" ]]; then
+      mkdir -p "$dst"
+      for f in "$src"/*.md; do
+        [[ -f "$f" ]] || continue
+        fname="$(basename "$f")"
+        if ! diff -q "$f" "$dst/$fname" &>/dev/null; then
+          cp "$f" "$dst/$fname"
+          echo -e "  ${CYAN}→${RESET} $subdir/$fname"
+          SYNCED=$((SYNCED + 1))
+        fi
+      done
+    fi
+  done
+  if [[ $SYNCED -eq 0 ]]; then
+    ok "Launchpad templates already in sync"
+  else
+    ok "Synced $SYNCED template file(s) from launchpad"
+  fi
+else
+  warn "Launchpad not found at $LAUNCHPAD_DIR — skipping template sync"
+  log "Set LAUNCHPAD_DIR in $HOME/.config/aidevkit/config to fix"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}Update complete!${RESET}"
 echo -e "  AI Dev Kit:   ${CYAN}v${INSTALLED_VERSION}${RESET}"
 echo -e "  CLAUDE.md:    ${CYAN}~/.claude/CLAUDE.md${RESET} regenerated"
 echo -e "  Projects:     ${CYAN}${UPDATED} updated${RESET}"
+echo -e "  Templates:    ${CYAN}~/.local/share/project-templates${RESET} synced from launchpad"
 echo ""
