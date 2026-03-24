@@ -36,19 +36,22 @@ State:
 
 Run in parallel:
 ```bash
-gh issue list --state closed --limit 5 --json number,title,closedAt --order updated
+gh issue list --state closed --limit 5 --json number,title,closedAt --sort updated --order desc
 git log --oneline -5
 ```
 
-Display as:
-```
-Recently shipped:
-  ✅ #N  Title (closed X days ago)
-  ✅ #N  Title (closed X days ago)
+Display both as tables:
 
-Recent commits:
-  abc1234  feat: ...
-  def5678  fix: ...
+```
+| # | Title | Closed |
+|---|-------|--------|
+| ✅ #4 | feat: build APX backend | Mar 21 |
+| ✅ #3 | feat: scaffold producer  | Mar 21 |
+
+| Commit | Message |
+|--------|---------|
+| abc1234 | feat: build APX frontend (#5) |
+| def5678 | feat: build APX backend (#4)  |
 ```
 
 This gives the user immediate context on project momentum without digging through history.
