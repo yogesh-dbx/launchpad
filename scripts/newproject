@@ -92,16 +92,17 @@ CUSTOMER_CONFIG_DIR=""
 # Determine project location: if inside a subfolder of DEV_DIR, create there
 if [[ "$PWD" == "$DEV_DIR"/* && "$PWD" != "$DEV_DIR" ]]; then
   CWD_PARENT="$(dirname "$PWD")"
-  if [[ "$CWD_PARENT" == "$DEV_DIR" && ! -d "$PWD/.claude" && ! -d "$PWD/.git" ]]; then
+  if [[ "$CWD_PARENT" == "$DEV_DIR" && -f "$PWD/CUSTOMER.md" ]]; then
+    # Customer workspace — always create project here, regardless of .git
     PROJECT_DIR="$PWD/$PROJECT_NAME"
     CUSTOMER_CONFIG_DIR="$PWD"
-    if [[ -f "$PWD/CUSTOMER.md" ]]; then
-      CUSTOMER_FILE="$PWD/CUSTOMER.md"
-      CUSTOMER_NAME="$(basename "$PWD")"
-      ok "Customer workspace detected: $CUSTOMER_NAME"
-    else
-      log "Creating project in: $(basename "$PWD")/ (no CUSTOMER.md — generic)"
-    fi
+    CUSTOMER_FILE="$PWD/CUSTOMER.md"
+    CUSTOMER_NAME="$(basename "$PWD")"
+    ok "Customer workspace detected: $CUSTOMER_NAME"
+  elif [[ "$CWD_PARENT" == "$DEV_DIR" && ! -d "$PWD/.claude" && ! -d "$PWD/.git" ]]; then
+    PROJECT_DIR="$PWD/$PROJECT_NAME"
+    CUSTOMER_CONFIG_DIR="$PWD"
+    log "Creating project in: $(basename "$PWD")/ (no CUSTOMER.md — generic)"
   elif [[ -f "$CWD_PARENT/CUSTOMER.md" && "$(dirname "$CWD_PARENT")" == "$DEV_DIR" ]]; then
     PROJECT_DIR="$CWD_PARENT/$PROJECT_NAME"
     CUSTOMER_CONFIG_DIR="$CWD_PARENT"
@@ -191,7 +192,7 @@ if [[ -z "$CATALOG" ]]; then
     CATALOG="$DBX_CATALOG"
     ok "Catalog from profile: $CATALOG"
   else
-    echo -e -n "  ${CYAN}Enter Unity Catalog name for this project:${RESET} "
+    echo -e -n "  ${CYAN}Catalog name for this project:${RESET} "
     read -r CATALOG
     [[ -z "$CATALOG" ]] && die "Catalog name is required. Use --catalog <name> or set it in your profile."
   fi
@@ -216,10 +217,11 @@ echo ""
   DEVKIT_TOOLS=claude,cursor,copilot \
   DEVKIT_MCP_PATH="$HOME/.ai-dev-kit" \
   DEVKIT_SILENT=true \
+  UV_NATIVE_TLS=1 \
     bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)
 ) || {
   warn "AI Dev Kit installer exited with errors. The project directory has been kept."
-  warn "Re-run manually: cd $PROJECT_DIR && bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)"
+  warn "Re-run manually: cd $PROJECT_DIR && DEVKIT_PROFILE=$PROFILE DEVKIT_SCOPE=project DEVKIT_TOOLS=claude,cursor,copilot DEVKIT_MCP_PATH=$HOME/.ai-dev-kit DEVKIT_SILENT=true UV_NATIVE_TLS=1 bash <(curl -sL https://raw.githubusercontent.com/databricks-solutions/ai-dev-kit/main/install.sh)"
 }
 
 # ── GitHub initialization (or local-only template copy) ──────────────────────
