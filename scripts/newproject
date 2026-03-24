@@ -244,7 +244,8 @@ if [[ "$DO_GITHUB" == true ]]; then
     if gh-project-init "${local_args[@]}"; then
       ok "GitHub repo + Projects v2 initialized"
     else
-      warn "GitHub init failed (project still usable locally)"
+      warn "GitHub init failed — falling back to local template copy"
+      DO_GITHUB=false
     fi
   else
     warn "gh-project-init not found in PATH. Skipping GitHub setup."
