@@ -18,7 +18,7 @@ Run ALL of these simultaneously:
 git branch --show-current && git status --short && git log --oneline -5
 
 # Batch B — all issues (closed + open) in one call
-gh issue list --state all --limit 30 --json number,title,state,labels,milestone,closedAt --order desc --sort updated
+gh issue list --state all --limit 30 --json number,title,state,labels,milestone,closedAt
 
 # Batch C — open PRs
 gh pr list --state open --json number,title,headRefName,state --limit 5
