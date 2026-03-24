@@ -619,9 +619,12 @@ elif [[ "${TERM_PROGRAM:-}" == "vscode" ]]; then
   echo -e "  Or open in Cursor:  ${CYAN}cursor $PROJECT_DIR${RESET}"
 elif [[ "$HAS_GHOSTTY" == true ]]; then
   log "Launching Ghostty with Claude Code..."
-  "$GHOSTTY_BIN" \
-    -- bash -c "cd '$PROJECT_DIR' && exec '$CLAUDE_BIN'" \
-    &
+  local tmp
+  tmp=$(mktemp /tmp/ghostty-launch-XXXXXX)
+  printf '#!/usr/bin/env bash\ncd %q && exec %q\n' "$PROJECT_DIR" "$CLAUDE_BIN" > "$tmp"
+  chmod +x "$tmp"
+  "$GHOSTTY_BIN" --command="$tmp" &
+  { sleep 3 && rm -f "$tmp"; } &
   ok "Ghostty launched!"
 else
   echo -e "To start working:"

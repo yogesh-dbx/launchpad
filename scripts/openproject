@@ -60,9 +60,12 @@ launch() {
   if [[ "${TERM_PROGRAM:-}" == "vscode" ]]; then
     echo -e "  Run: ${CYAN}cd $dir && claude${RESET}"
   elif [[ "$HAS_GHOSTTY" == true ]]; then
-    "$GHOSTTY_BIN" \
-      -- bash -c "cd '$dir' && exec '$CLAUDE_BIN'" \
-      &
+    local tmp
+    tmp=$(mktemp /tmp/ghostty-launch-XXXXXX)
+    printf '#!/usr/bin/env bash\ncd %q && exec %q\n' "$dir" "$CLAUDE_BIN" > "$tmp"
+    chmod +x "$tmp"
+    "$GHOSTTY_BIN" --command="$tmp" &
+    { sleep 3 && rm -f "$tmp"; } &
     echo -e "${GREEN}✓${RESET} Opening ${CYAN}$name${RESET} in Ghostty..."
   else
     echo -e "${GREEN}✓${RESET} Opening ${CYAN}$name${RESET}..."
